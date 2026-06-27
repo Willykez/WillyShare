@@ -1,0 +1,160 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="@color/ws_bg"
+    android:orientation="vertical">
+
+    <!-- Header bar -->
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="64dp"
+        android:orientation="horizontal"
+        android:gravity="center_vertical"
+        android:paddingStart="20dp"
+        android:paddingEnd="16dp"
+        android:background="@color/ws_surface">
+        <LinearLayout android:layout_width="0dp" android:layout_height="wrap_content"
+            android:layout_weight="1" android:orientation="vertical">
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="Select Files"
+                android:textColor="@color/ws_on_surface"
+                android:textSize="20sp"
+                android:textStyle="bold"/>
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="Tap items to select · Scroll for more"
+                android:textColor="@color/ws_on_surface_faint"
+                android:textSize="11sp"
+                android:layout_marginTop="2dp"/>
+        </LinearLayout>
+        <Button
+            android:id="@+id/btnPickMore"
+            android:layout_width="wrap_content"
+            android:layout_height="36dp"
+            android:background="@drawable/bg_button_secondary"
+            android:text="+ Add"
+            android:textColor="@color/ws_primary"
+            android:textSize="12sp"
+            android:textStyle="bold"
+            android:paddingStart="16dp"
+            android:paddingEnd="16dp"
+            android:stateListAnimator="@null"/>
+    </LinearLayout>
+
+    <View android:layout_width="match_parent" android:layout_height="1dp"
+        android:background="@color/ws_stroke" android:alpha="0.5"/>
+
+    <!-- Type filter chips -->
+    <HorizontalScrollView
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:scrollbars="none"
+        android:paddingStart="16dp"
+        android:paddingEnd="16dp"
+        android:paddingTop="12dp"
+        android:paddingBottom="12dp"
+        android:clipToPadding="false">
+        <LinearLayout
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal">
+            <TextView android:layout_width="wrap_content" android:layout_height="32dp"
+                android:text="All" android:gravity="center"
+                android:background="@drawable/bg_button_primary"
+                android:textColor="#FFFFFF" android:textSize="12sp" android:textStyle="bold"
+                android:paddingStart="16dp" android:paddingEnd="16dp"
+                android:layout_marginEnd="8dp"/>
+            <TextView android:layout_width="wrap_content" android:layout_height="32dp"
+                android:text="📷 Photos" android:gravity="center"
+                android:background="@drawable/bg_button_secondary"
+                android:textColor="@color/ws_on_surface_dim" android:textSize="12sp"
+                android:paddingStart="14dp" android:paddingEnd="14dp"
+                android:layout_marginEnd="8dp"/>
+            <TextView android:layout_width="wrap_content" android:layout_height="32dp"
+                android:text="🎬 Videos" android:gravity="center"
+                android:background="@drawable/bg_button_secondary"
+                android:textColor="@color/ws_on_surface_dim" android:textSize="12sp"
+                android:paddingStart="14dp" android:paddingEnd="14dp"
+                android:layout_marginEnd="8dp"/>
+            <TextView android:layout_width="wrap_content" android:layout_height="32dp"
+                android:text="🎵 Music" android:gravity="center"
+                android:background="@drawable/bg_button_secondary"
+                android:textColor="@color/ws_on_surface_dim" android:textSize="12sp"
+                android:paddingStart="14dp" android:paddingEnd="14dp"
+                android:layout_marginEnd="8dp"/>
+            <TextView android:layout_width="wrap_content" android:layout_height="32dp"
+                android:text="📄 Docs" android:gravity="center"
+                android:background="@drawable/bg_button_secondary"
+                android:textColor="@color/ws_on_surface_dim" android:textSize="12sp"
+                android:paddingStart="14dp" android:paddingEnd="14dp"/>
+        </LinearLayout>
+    </HorizontalScrollView>
+
+    <!-- File list -->
+    <ListView
+        android:id="@+id/lvFiles"
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1"
+        android:choiceMode="multipleChoice"
+        android:divider="@null"
+        android:paddingStart="16dp"
+        android:paddingEnd="16dp"
+        android:paddingBottom="8dp"
+        android:clipToPadding="false"
+        android:layoutAnimation="@anim/list_layout_anim"/>
+
+    <!-- Sticky selection bar (mirrors design sample) -->
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:background="@drawable/bg_nav_bar"
+        android:orientation="horizontal"
+        android:gravity="center_vertical"
+        android:paddingStart="20dp"
+        android:paddingEnd="20dp"
+        android:paddingTop="16dp"
+        android:paddingBottom="20dp"
+        android:elevation="12dp">
+
+        <LinearLayout
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:orientation="vertical">
+            <TextView
+                android:id="@+id/tvSelectedCount"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="0 items selected"
+                android:textColor="@color/ws_on_surface"
+                android:textSize="15sp"
+                android:textStyle="bold"/>
+            <TextView
+                android:id="@+id/tvSelectedSize"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="Total: 0 B"
+                android:textColor="@color/ws_on_surface_dim"
+                android:textSize="12sp"
+                android:layout_marginTop="2dp"/>
+        </LinearLayout>
+
+        <Button
+            android:id="@+id/btnSendSelected"
+            android:layout_width="wrap_content"
+            android:layout_height="50dp"
+            android:background="@drawable/bg_button_primary"
+            android:text="Next  →"
+            android:textColor="#FFFFFF"
+            android:textSize="15sp"
+            android:textStyle="bold"
+            android:paddingStart="28dp"
+            android:paddingEnd="28dp"
+            android:stateListAnimator="@null"/>
+    </LinearLayout>
+</LinearLayout>

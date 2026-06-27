@@ -1,0 +1,539 @@
+<?xml version="1.0" encoding="utf-8"?>
+<androidx.coordinatorlayout.widget.CoordinatorLayout
+    xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="@color/ws_bg">
+
+    <!-- Scrollable content -->
+    <ScrollView
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:fillViewport="true"
+        android:paddingBottom="88dp"
+        android:clipToPadding="false">
+
+        <LinearLayout
+            android:id="@+id/rootLayout"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical">
+
+            <!-- ── Top App Bar ─────────────────────────────────────────── -->
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="64dp"
+                android:orientation="horizontal"
+                android:gravity="center_vertical"
+                android:paddingStart="20dp"
+                android:paddingEnd="16dp"
+                android:background="@color/ws_surface">
+
+                <!-- Logo + title -->
+                <FrameLayout
+                    android:layout_width="36dp"
+                    android:layout_height="36dp"
+                    android:layout_marginEnd="10dp">
+                    <View
+                        android:layout_width="36dp"
+                        android:layout_height="36dp"
+                        android:background="@drawable/bg_icon_circle"/>
+                    <TextView
+                        android:layout_width="match_parent"
+                        android:layout_height="match_parent"
+                        android:text="⚡"
+                        android:textSize="18sp"
+                        android:gravity="center"/>
+                </FrameLayout>
+
+                <TextView
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:text="WillyShare"
+                    android:textColor="@color/ws_primary"
+                    android:textSize="20sp"
+                    android:textStyle="bold"
+                    android:letterSpacing="-0.01"/>
+
+                <TextView
+                    android:id="@+id/tvLogo"
+                    android:layout_width="40dp"
+                    android:layout_height="40dp"
+                    android:text="🔔"
+                    android:textSize="18sp"
+                    android:gravity="center"/>
+            </LinearLayout>
+
+            <!-- subtle divider -->
+            <View android:layout_width="match_parent" android:layout_height="1dp"
+                android:background="@color/ws_stroke" android:alpha="0.5"/>
+
+            <!-- ── Main content padded ───────────────────────────────── -->
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical"
+                android:paddingStart="20dp"
+                android:paddingEnd="20dp">
+
+                <!-- ── Quick-action hero ── -->
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="horizontal"
+                    android:layout_marginTop="24dp"
+                    android:layout_marginBottom="4dp"
+                    android:gravity="center_vertical">
+
+                    <!-- SEND card -->
+                    <LinearLayout
+                        android:id="@+id/cardSend"
+                        android:layout_width="0dp"
+                        android:layout_height="140dp"
+                        android:layout_weight="1"
+                        android:layout_marginEnd="10dp"
+                        android:background="@drawable/bg_card_elevated"
+                        android:orientation="vertical"
+                        android:gravity="center"
+                        android:padding="16dp"
+                        android:clickable="true"
+                        android:focusable="true"
+                        android:elevation="4dp">
+
+                        <FrameLayout
+                            android:layout_width="52dp"
+                            android:layout_height="52dp">
+                            <View android:layout_width="52dp" android:layout_height="52dp"
+                                android:background="@drawable/bg_icon_circle"/>
+                            <TextView android:layout_width="match_parent"
+                                android:layout_height="match_parent"
+                                android:text="📤" android:textSize="26sp"
+                                android:gravity="center"/>
+                        </FrameLayout>
+
+                        <TextView
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:text="Send"
+                            android:textColor="@color/ws_on_surface"
+                            android:textSize="16sp"
+                            android:textStyle="bold"
+                            android:layout_marginTop="10dp"/>
+
+                        <TextView
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:text="Share files fast"
+                            android:textColor="@color/ws_on_surface_dim"
+                            android:textSize="11sp"
+                            android:layout_marginTop="3dp"/>
+                    </LinearLayout>
+
+                    <!-- RECEIVE card -->
+                    <LinearLayout
+                        android:id="@+id/cardReceive"
+                        android:layout_width="0dp"
+                        android:layout_height="140dp"
+                        android:layout_weight="1"
+                        android:background="@drawable/bg_card_elevated"
+                        android:orientation="vertical"
+                        android:gravity="center"
+                        android:padding="16dp"
+                        android:clickable="true"
+                        android:focusable="true"
+                        android:elevation="4dp">
+
+                        <FrameLayout
+                            android:layout_width="52dp"
+                            android:layout_height="52dp">
+                            <View android:layout_width="52dp" android:layout_height="52dp"
+                                android:background="@drawable/bg_icon_circle"/>
+                            <TextView android:layout_width="match_parent"
+                                android:layout_height="match_parent"
+                                android:text="📥" android:textSize="26sp"
+                                android:gravity="center"/>
+                        </FrameLayout>
+
+                        <TextView
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:text="Receive"
+                            android:textColor="@color/ws_on_surface"
+                            android:textSize="16sp"
+                            android:textStyle="bold"
+                            android:layout_marginTop="10dp"/>
+
+                        <TextView
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:text="Accept transfer"
+                            android:textColor="@color/ws_on_surface_dim"
+                            android:textSize="11sp"
+                            android:layout_marginTop="3dp"/>
+                    </LinearLayout>
+                </LinearLayout>
+
+                <!-- ── Browse by Type ── -->
+                <TextView
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:text="BROWSE BY TYPE"
+                    android:textColor="@color/ws_on_surface_faint"
+                    android:textSize="10sp"
+                    android:letterSpacing="0.14"
+                    android:layout_marginTop="28dp"
+                    android:layout_marginBottom="12dp"/>
+
+                <!-- Horizontal scroll for type chips -->
+                <HorizontalScrollView
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:scrollbars="none"
+                    android:layout_marginStart="-20dp"
+                    android:layout_marginEnd="-20dp"
+                    android:paddingStart="20dp"
+                    android:paddingEnd="20dp"
+                    android:clipToPadding="false">
+
+                    <LinearLayout
+                        android:layout_width="wrap_content"
+                        android:layout_height="100dp"
+                        android:orientation="horizontal">
+
+                        <!-- Photos -->
+                        <LinearLayout android:id="@+id/typePhotos"
+                            android:layout_width="90dp" android:layout_height="90dp"
+                            android:layout_marginEnd="12dp"
+                            android:background="@drawable/bg_card"
+                            android:orientation="vertical" android:gravity="center"
+                            android:clickable="true" android:focusable="true">
+                            <TextView android:layout_width="wrap_content"
+                                android:layout_height="wrap_content"
+                                android:text="🖼️" android:textSize="26sp" android:gravity="center"/>
+                            <TextView android:layout_width="wrap_content"
+                                android:layout_height="wrap_content"
+                                android:text="Photos" android:textColor="@color/ws_on_surface_dim"
+                                android:textSize="10sp" android:layout_marginTop="6dp"/>
+                        </LinearLayout>
+
+                        <!-- Videos -->
+                        <LinearLayout android:id="@+id/typeVideos"
+                            android:layout_width="90dp" android:layout_height="90dp"
+                            android:layout_marginEnd="12dp"
+                            android:background="@drawable/bg_card"
+                            android:orientation="vertical" android:gravity="center"
+                            android:clickable="true" android:focusable="true">
+                            <TextView android:layout_width="wrap_content"
+                                android:layout_height="wrap_content"
+                                android:text="🎬" android:textSize="26sp" android:gravity="center"/>
+                            <TextView android:layout_width="wrap_content"
+                                android:layout_height="wrap_content"
+                                android:text="Videos" android:textColor="@color/ws_on_surface_dim"
+                                android:textSize="10sp" android:layout_marginTop="6dp"/>
+                        </LinearLayout>
+
+                        <!-- Music -->
+                        <LinearLayout android:id="@+id/typeMusic"
+                            android:layout_width="90dp" android:layout_height="90dp"
+                            android:layout_marginEnd="12dp"
+                            android:background="@drawable/bg_card"
+                            android:orientation="vertical" android:gravity="center"
+                            android:clickable="true" android:focusable="true">
+                            <TextView android:layout_width="wrap_content"
+                                android:layout_height="wrap_content"
+                                android:text="🎵" android:textSize="26sp" android:gravity="center"/>
+                            <TextView android:layout_width="wrap_content"
+                                android:layout_height="wrap_content"
+                                android:text="Music" android:textColor="@color/ws_on_surface_dim"
+                                android:textSize="10sp" android:layout_marginTop="6dp"/>
+                        </LinearLayout>
+
+                        <!-- Apps -->
+                        <LinearLayout android:id="@+id/typeApps"
+                            android:layout_width="90dp" android:layout_height="90dp"
+                            android:layout_marginEnd="12dp"
+                            android:background="@drawable/bg_card"
+                            android:orientation="vertical" android:gravity="center"
+                            android:clickable="true" android:focusable="true">
+                            <TextView android:layout_width="wrap_content"
+                                android:layout_height="wrap_content"
+                                android:text="📱" android:textSize="26sp" android:gravity="center"/>
+                            <TextView android:layout_width="wrap_content"
+                                android:layout_height="wrap_content"
+                                android:text="Apps" android:textColor="@color/ws_on_surface_dim"
+                                android:textSize="10sp" android:layout_marginTop="6dp"/>
+                        </LinearLayout>
+
+                        <!-- Files -->
+                        <LinearLayout android:id="@+id/typeFiles"
+                            android:layout_width="90dp" android:layout_height="90dp"
+                            android:background="@drawable/bg_card"
+                            android:orientation="vertical" android:gravity="center"
+                            android:clickable="true" android:focusable="true">
+                            <TextView android:layout_width="wrap_content"
+                                android:layout_height="wrap_content"
+                                android:text="📄" android:textSize="26sp" android:gravity="center"/>
+                            <TextView android:layout_width="wrap_content"
+                                android:layout_height="wrap_content"
+                                android:text="Files" android:textColor="@color/ws_on_surface_dim"
+                                android:textSize="10sp" android:layout_marginTop="6dp"/>
+                        </LinearLayout>
+                    </LinearLayout>
+                </HorizontalScrollView>
+
+                <!-- ── Recent Activity ── -->
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="horizontal"
+                    android:gravity="center_vertical"
+                    android:layout_marginTop="28dp"
+                    android:layout_marginBottom="12dp">
+
+                    <TextView
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:text="Recent Activity"
+                        android:textColor="@color/ws_on_surface"
+                        android:textSize="16sp"
+                        android:textStyle="bold"/>
+
+                    <TextView
+                        android:id="@+id/cardHistory"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="VIEW ALL"
+                        android:textColor="@color/ws_primary"
+                        android:textSize="11sp"
+                        android:letterSpacing="0.05"
+                        android:textStyle="bold"
+                        android:clickable="true"
+                        android:focusable="true"
+                        android:paddingStart="8dp"
+                        android:paddingEnd="8dp"
+                        android:paddingTop="6dp"
+                        android:paddingBottom="6dp"/>
+                </LinearLayout>
+
+                <!-- Recent item placeholder 1 -->
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:background="@drawable/bg_card"
+                    android:orientation="horizontal"
+                    android:gravity="center_vertical"
+                    android:padding="16dp"
+                    android:layout_marginBottom="10dp">
+
+                    <FrameLayout android:layout_width="44dp" android:layout_height="44dp"
+                        android:layout_marginEnd="14dp">
+                        <View android:layout_width="44dp" android:layout_height="44dp"
+                            android:background="@drawable/bg_card"/>
+                        <TextView android:layout_width="match_parent"
+                            android:layout_height="match_parent"
+                            android:text="📕" android:textSize="22sp" android:gravity="center"/>
+                    </FrameLayout>
+
+                    <LinearLayout android:layout_width="0dp" android:layout_height="wrap_content"
+                        android:layout_weight="1" android:orientation="vertical">
+                        <TextView android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:text="Project_Brief.pdf"
+                            android:textColor="@color/ws_on_surface"
+                            android:textSize="14sp" android:textStyle="bold"
+                            android:maxLines="1" android:ellipsize="end"/>
+                        <TextView android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:text="SENT · 2.3 MB"
+                            android:textColor="@color/ws_on_surface_faint"
+                            android:textSize="10sp" android:letterSpacing="0.05"
+                            android:layout_marginTop="3dp"/>
+                    </LinearLayout>
+
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="✓"
+                        android:textColor="@color/ws_success"
+                        android:textSize="18sp"/>
+                </LinearLayout>
+
+                <!-- Recent item placeholder 2 -->
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:background="@drawable/bg_card"
+                    android:orientation="horizontal"
+                    android:gravity="center_vertical"
+                    android:padding="16dp"
+                    android:layout_marginBottom="10dp">
+
+                    <FrameLayout android:layout_width="44dp" android:layout_height="44dp"
+                        android:layout_marginEnd="14dp">
+                        <View android:layout_width="44dp" android:layout_height="44dp"
+                            android:background="@drawable/bg_card"/>
+                        <TextView android:layout_width="match_parent"
+                            android:layout_height="match_parent"
+                            android:text="🎬" android:textSize="22sp" android:gravity="center"/>
+                    </FrameLayout>
+
+                    <LinearLayout android:layout_width="0dp" android:layout_height="wrap_content"
+                        android:layout_weight="1" android:orientation="vertical">
+                        <TextView android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:text="Vacation_4K.mov"
+                            android:textColor="@color/ws_on_surface"
+                            android:textSize="14sp" android:textStyle="bold"
+                            android:maxLines="1" android:ellipsize="end"/>
+                        <TextView android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:text="RECEIVED · 845 MB"
+                            android:textColor="@color/ws_on_surface_faint"
+                            android:textSize="10sp" android:letterSpacing="0.05"
+                            android:layout_marginTop="3dp"/>
+                    </LinearLayout>
+
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="✓"
+                        android:textColor="@color/ws_success"
+                        android:textSize="18sp"/>
+                </LinearLayout>
+
+                <!-- ── Speed stats row ── -->
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:background="@drawable/bg_card_elevated"
+                    android:orientation="horizontal"
+                    android:gravity="center"
+                    android:padding="20dp"
+                    android:layout_marginTop="8dp"
+                    android:layout_marginBottom="8dp">
+
+                    <LinearLayout android:layout_width="0dp" android:layout_height="wrap_content"
+                        android:layout_weight="1" android:orientation="vertical" android:gravity="center">
+                        <TextView android:layout_width="wrap_content" android:layout_height="wrap_content"
+                            android:text="8" android:textColor="@color/ws_primary"
+                            android:textSize="24sp" android:textStyle="bold"/>
+                        <TextView android:layout_width="wrap_content" android:layout_height="wrap_content"
+                            android:text="STREAMS" android:textColor="@color/ws_on_surface_faint"
+                            android:textSize="9sp" android:letterSpacing="0.10"/>
+                    </LinearLayout>
+
+                    <View android:layout_width="1dp" android:layout_height="32dp"
+                        android:background="@color/ws_divider"/>
+
+                    <LinearLayout android:layout_width="0dp" android:layout_height="wrap_content"
+                        android:layout_weight="1" android:orientation="vertical" android:gravity="center">
+                        <TextView android:layout_width="wrap_content" android:layout_height="wrap_content"
+                            android:text="5GHz" android:textColor="@color/ws_primary"
+                            android:textSize="24sp" android:textStyle="bold"/>
+                        <TextView android:layout_width="wrap_content" android:layout_height="wrap_content"
+                            android:text="WI-FI P2P" android:textColor="@color/ws_on_surface_faint"
+                            android:textSize="9sp" android:letterSpacing="0.10"/>
+                    </LinearLayout>
+
+                    <View android:layout_width="1dp" android:layout_height="32dp"
+                        android:background="@color/ws_divider"/>
+
+                    <LinearLayout android:layout_width="0dp" android:layout_height="wrap_content"
+                        android:layout_weight="1" android:orientation="vertical" android:gravity="center">
+                        <TextView android:layout_width="wrap_content" android:layout_height="wrap_content"
+                            android:text="4MB" android:textColor="@color/ws_primary"
+                            android:textSize="24sp" android:textStyle="bold"/>
+                        <TextView android:layout_width="wrap_content" android:layout_height="wrap_content"
+                            android:text="BUFFER" android:textColor="@color/ws_on_surface_faint"
+                            android:textSize="9sp" android:letterSpacing="0.10"/>
+                    </LinearLayout>
+                </LinearLayout>
+
+            </LinearLayout>
+        </LinearLayout>
+    </ScrollView>
+
+    <!-- ── Bottom Nav ──────────────────────────────────────────────────── -->
+    <LinearLayout
+        android:id="@+id/bottomNav"
+        android:layout_width="match_parent"
+        android:layout_height="72dp"
+        android:layout_gravity="bottom"
+        android:background="@drawable/bg_nav_bar"
+        android:orientation="horizontal"
+        android:gravity="center"
+        android:elevation="8dp">
+
+        <!-- Home (active) -->
+        <LinearLayout
+            android:id="@+id/navHome"
+            android:layout_width="0dp"
+            android:layout_height="match_parent"
+            android:layout_weight="1"
+            android:orientation="vertical"
+            android:gravity="center"
+            android:background="@null">
+            <FrameLayout android:layout_width="56dp" android:layout_height="28dp">
+                <View android:layout_width="56dp" android:layout_height="28dp"
+                    android:background="@drawable/bg_nav_item_active"/>
+                <TextView android:layout_width="match_parent"
+                    android:layout_height="match_parent"
+                    android:text="🏠" android:textSize="16sp" android:gravity="center"/>
+            </FrameLayout>
+            <TextView android:layout_width="wrap_content" android:layout_height="wrap_content"
+                android:text="Home" android:textColor="@color/ws_primary"
+                android:textSize="10sp" android:layout_marginTop="3dp" android:textStyle="bold"/>
+        </LinearLayout>
+
+        <!-- Discovery -->
+        <LinearLayout
+            android:id="@+id/navDiscovery"
+            android:layout_width="0dp"
+            android:layout_height="match_parent"
+            android:layout_weight="1"
+            android:orientation="vertical"
+            android:gravity="center"
+            android:clickable="true"
+            android:focusable="true">
+            <TextView android:layout_width="wrap_content" android:layout_height="wrap_content"
+                android:text="📡" android:textSize="22sp" android:gravity="center"/>
+            <TextView android:layout_width="wrap_content" android:layout_height="wrap_content"
+                android:text="Discovery" android:textColor="@color/ws_on_surface_faint"
+                android:textSize="10sp" android:layout_marginTop="3dp"/>
+        </LinearLayout>
+
+        <!-- History -->
+        <LinearLayout
+            android:id="@+id/navHistory"
+            android:layout_width="0dp"
+            android:layout_height="match_parent"
+            android:layout_weight="1"
+            android:orientation="vertical"
+            android:gravity="center"
+            android:clickable="true"
+            android:focusable="true">
+            <TextView android:layout_width="wrap_content" android:layout_height="wrap_content"
+                android:text="🕒" android:textSize="22sp" android:gravity="center"/>
+            <TextView android:layout_width="wrap_content" android:layout_height="wrap_content"
+                android:text="History" android:textColor="@color/ws_on_surface_faint"
+                android:textSize="10sp" android:layout_marginTop="3dp"/>
+        </LinearLayout>
+
+        <!-- Settings placeholder -->
+        <LinearLayout
+            android:layout_width="0dp"
+            android:layout_height="match_parent"
+            android:layout_weight="1"
+            android:orientation="vertical"
+            android:gravity="center">
+            <TextView android:layout_width="wrap_content" android:layout_height="wrap_content"
+                android:text="⚙️" android:textSize="22sp" android:gravity="center"/>
+            <TextView android:layout_width="wrap_content" android:layout_height="wrap_content"
+                android:text="Settings" android:textColor="@color/ws_on_surface_faint"
+                android:textSize="10sp" android:layout_marginTop="3dp"/>
+        </LinearLayout>
+    </LinearLayout>
+
+</androidx.coordinatorlayout.widget.CoordinatorLayout>

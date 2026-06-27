@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <style name="AppTheme" parent="Theme.AppCompat.DayNight.NoActionBar">
+        <item name="colorPrimary">@color/ws_primary</item>
+        <item name="colorPrimaryDark">@color/ws_status_bar</item>
+        <item name="colorAccent">@color/ws_accent</item>
+        <item name="android:windowBackground">@color/ws_bg</item>
+        <item name="android:statusBarColor">@color/ws_status_bar</item>
+        <item name="android:navigationBarColor">@color/ws_status_bar</item>
+        <item name="android:windowActivityTransitions">true</item>
+        <item name="android:activityOpenEnterAnimation">@anim/slide_in_right</item>
+        <item name="android:activityOpenExitAnimation">@anim/slide_out_left</item>
+        <item name="android:activityCloseEnterAnimation">@anim/slide_in_left</item>
+        <item name="android:activityCloseExitAnimation">@anim/slide_out_right</item>
+    </style>
+</resources>

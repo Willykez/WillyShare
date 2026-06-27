@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Used by AnimUtils.pulse() to store the AnimatorSet on the view tag,
+         so stopPulse() can cancel it without calling view.clearAnimation()
+         which also clears unrelated animators. -->
+    <item name="pulse_animator_tag" type="id"/>
+</resources>

@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="ws_bg">#0E0B17</color>
+    <color name="ws_surface">#1A1529</color>
+    <color name="ws_surface2">#221D33</color>
+    <color name="ws_surface_container">#261F38</color>
+    <color name="ws_surface_container_high">#2D2740</color>
+    <color name="ws_on_surface">#E8E0F5</color>
+    <color name="ws_on_surface_dim">#9B93B0</color>
+    <color name="ws_on_surface_faint">#58516A</color>
+    <color name="ws_primary">#C8A8FF</color>
+    <color name="ws_primary_container">#9068F2</color>
+    <color name="ws_on_primary">#22005C</color>
+    <color name="ws_accent">#ADC6FF</color>
+    <color name="ws_accent_container">#4A88F0</color>
+    <color name="ws_accent_dim">#7AABF0</color>
+    <color name="ws_stroke">#3D3658</color>
+    <color name="ws_divider">#2A2440</color>
+    <color name="ws_icon_bg">#2A2040</color>
+    <color name="ws_status_bar">#0E0B17</color>
+    <color name="ws_success">#6EDB90</color>
+    <color name="ws_error">#FFB4AB</color>
+</resources>

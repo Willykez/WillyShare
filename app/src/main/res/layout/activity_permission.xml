@@ -1,0 +1,100 @@
+<?xml version="1.0" encoding="utf-8"?>
+<ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="@color/ws_bg"
+    android:fillViewport="true">
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="vertical"
+        android:gravity="center_horizontal"
+        android:paddingStart="24dp"
+        android:paddingEnd="24dp"
+        android:paddingBottom="40dp">
+
+        <!-- Hero -->
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical"
+            android:gravity="center"
+            android:paddingTop="56dp"
+            android:paddingBottom="16dp">
+
+            <FrameLayout
+                android:layout_width="88dp"
+                android:layout_height="88dp">
+                <View android:layout_width="88dp" android:layout_height="88dp"
+                    android:background="@drawable/bg_icon_circle"/>
+                <TextView android:layout_width="match_parent"
+                    android:layout_height="match_parent"
+                    android:text="🔐" android:textSize="44sp"
+                    android:gravity="center"/>
+            </FrameLayout>
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="App Permissions"
+                android:textColor="@color/ws_on_surface"
+                android:textSize="28sp"
+                android:textStyle="bold"
+                android:layout_marginTop="20dp"/>
+
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="WillyShare needs the following to discover devices and transfer files at high speed. No data ever leaves your device."
+                android:textColor="@color/ws_on_surface_dim"
+                android:textSize="14sp"
+                android:gravity="center"
+                android:lineSpacingMultiplier="1.5"
+                android:layout_marginTop="12dp"
+                android:layout_marginBottom="32dp"/>
+        </LinearLayout>
+
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="REQUIRED PERMISSIONS"
+            android:textColor="@color/ws_on_surface_faint"
+            android:textSize="10sp"
+            android:letterSpacing="0.14"
+            android:layout_marginBottom="12dp"/>
+
+        <LinearLayout
+            android:id="@+id/permContainer"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical"/>
+
+        <View android:layout_width="match_parent" android:layout_height="1dp"
+            android:background="@color/ws_divider"
+            android:layout_marginTop="32dp" android:layout_marginBottom="28dp"/>
+
+        <Button
+            android:id="@+id/btnGrantAll"
+            android:layout_width="match_parent"
+            android:layout_height="56dp"
+            android:background="@drawable/bg_button_primary"
+            android:text="Grant All Permissions"
+            android:textColor="#FFFFFF"
+            android:textSize="16sp"
+            android:textStyle="bold"
+            android:letterSpacing="0.02"
+            android:stateListAnimator="@null"/>
+
+        <Button
+            android:id="@+id/btnContinueAnyway"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:background="@android:color/transparent"
+            android:text="Continue with limited access"
+            android:textColor="@color/ws_on_surface_faint"
+            android:textSize="13sp"
+            android:layout_marginTop="12dp"
+            android:stateListAnimator="@null"/>
+    </LinearLayout>
+</ScrollView>

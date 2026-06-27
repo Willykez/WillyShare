@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Design-sample tokens mapped to WillyShare names -->
+    <color name="ws_bg">#F7F9FB</color>
+    <color name="ws_surface">#FFFFFF</color>
+    <color name="ws_surface2">#F2F4F6</color>
+    <color name="ws_surface_container">#ECEEF0</color>
+    <color name="ws_surface_container_high">#E6E8EA</color>
+    <color name="ws_on_surface">#191C1E</color>
+    <color name="ws_on_surface_dim">#494454</color>
+    <color name="ws_on_surface_faint">#7B7486</color>
+    <!-- Primary = deep violet -->
+    <color name="ws_primary">#6B38D4</color>
+    <color name="ws_primary_container">#8455EF</color>
+    <color name="ws_on_primary">#FFFFFF</color>
+    <!-- Secondary = bold blue -->
+    <color name="ws_accent">#0058BE</color>
+    <color name="ws_accent_container">#2170E4</color>
+    <color name="ws_accent_dim">#004395</color>
+    <!-- Misc -->
+    <color name="ws_stroke">#CBC3D7</color>
+    <color name="ws_divider">#E0E3E5</color>
+    <color name="ws_icon_bg">#F0EBFF</color>
+    <color name="ws_status_bar">#F7F9FB</color>
+    <color name="ws_success">#1B9E4B</color>
+    <color name="ws_error">#BA1A1A</color>
+</resources>
