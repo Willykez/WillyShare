@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Night / dark theme -->
+    <color name="ws_bg">#070D14</color>
+    <color name="ws_surface">#111B28</color>
+    <color name="ws_surface2">#0E1B28</color>
+    <color name="ws_on_surface">#FFFFFF</color>
+    <color name="ws_on_surface_dim">#3A5F80</color>
+    <color name="ws_on_surface_faint">#172435</color>
+    <color name="ws_accent">#1A7FFF</color>
+    <color name="ws_accent_dim">#1A5FA0</color>
+    <color name="ws_stroke">#1C2E42</color>
+    <color name="ws_divider">#0D1C2E</color>
+    <color name="ws_icon_bg">#141E2A</color>
+    <color name="ws_status_bar">#070D14</color>
+</resources>

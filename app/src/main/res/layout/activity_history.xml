@@ -1,0 +1,61 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="@color/ws_bg"
+    android:orientation="vertical">
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:gravity="center_vertical"
+        android:paddingStart="20dp"
+        android:paddingEnd="16dp"
+        android:paddingTop="20dp"
+        android:paddingBottom="12dp">
+
+        <TextView
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:text="Transfer History"
+            android:textColor="@color/ws_on_surface"
+            android:textSize="22sp"
+            android:textStyle="bold"/>
+
+        <Button
+            android:id="@+id/btnClearHistory"
+            android:layout_width="wrap_content"
+            android:layout_height="36dp"
+            android:background="@drawable/bg_button_danger"
+            android:text="Clear"
+            android:textColor="#FFFFFF"
+            android:textSize="12sp"
+            android:paddingStart="16dp"
+            android:paddingEnd="16dp"
+            android:stateListAnimator="@null"/>
+    </LinearLayout>
+
+    <TextView
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="RECENT TRANSFERS"
+        android:textColor="@color/ws_accent_dim"
+        android:textSize="10.5sp"
+        android:letterSpacing="0.14"
+        android:paddingStart="24dp"
+        android:paddingEnd="24dp"
+        android:layout_marginBottom="6dp"/>
+
+    <ListView
+        android:id="@+id/lvHistory"
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1"
+        android:divider="@null"
+        android:paddingStart="16dp"
+        android:paddingEnd="16dp"
+        android:clipToPadding="false"
+        android:layoutAnimation="@anim/list_layout_anim"/>
+</LinearLayout>

@@ -1,0 +1,156 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="@color/ws_bg"
+    android:orientation="vertical">
+
+    <!-- Header -->
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:gravity="center_vertical"
+        android:padding="16dp"
+        android:layout_marginTop="4dp">
+
+        <TextView
+            android:id="@+id/tvScanTitle"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:text="Find a Device"
+            android:textColor="@color/ws_on_surface"
+            android:textSize="22sp"
+            android:textStyle="bold"/>
+
+        <!-- This device name badge (top right) -->
+        <TextView
+            android:id="@+id/tvThisDeviceName"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text=""
+            android:textColor="@color/ws_on_surface_dim"
+            android:textSize="11sp"
+            android:maxLines="1"
+            android:ellipsize="end"/>
+    </LinearLayout>
+
+    <!-- Radar visual -->
+    <FrameLayout
+        android:layout_width="180dp"
+        android:layout_height="180dp"
+        android:layout_gravity="center_horizontal"
+        android:layout_marginTop="8dp"
+        android:layout_marginBottom="8dp">
+
+        <View android:id="@+id/radarRing3"
+            android:layout_width="180dp" android:layout_height="180dp"
+            android:background="@drawable/bg_radar" android:alpha="0.25"/>
+        <View android:id="@+id/radarRing2"
+            android:layout_width="130dp" android:layout_height="130dp"
+            android:background="@drawable/bg_radar"
+            android:layout_gravity="center" android:alpha="0.45"/>
+        <View android:id="@+id/radarRing1"
+            android:layout_width="80dp" android:layout_height="80dp"
+            android:background="@drawable/bg_radar"
+            android:layout_gravity="center" android:alpha="0.7"/>
+
+        <TextView
+            android:id="@+id/tvRadarIcon"
+            android:layout_width="48dp"
+            android:layout_height="48dp"
+            android:layout_gravity="center"
+            android:text="📡"
+            android:textSize="26sp"
+            android:gravity="center"/>
+    </FrameLayout>
+
+    <TextView
+        android:id="@+id/tvScanStatus"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_gravity="center_horizontal"
+        android:text="Scanning…"
+        android:textColor="@color/ws_on_surface_dim"
+        android:textSize="13sp"
+        android:layout_marginBottom="12dp"/>
+
+    <!-- SEND mode: Refresh button -->
+    <Button
+        android:id="@+id/btnRefresh"
+        android:layout_width="match_parent"
+        android:layout_height="48dp"
+        android:layout_marginStart="24dp"
+        android:layout_marginEnd="24dp"
+        android:layout_marginBottom="16dp"
+        android:background="@drawable/bg_button_primary"
+        android:text="Refresh Scan"
+        android:textColor="#FFFFFF"
+        android:textSize="15sp"
+        android:textStyle="bold"
+        android:stateListAnimator="@null"/>
+
+    <!-- SEND mode: device list -->
+    <TextView
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="NEARBY DEVICES"
+        android:textColor="@color/ws_accent_dim"
+        android:textSize="10.5sp"
+        android:letterSpacing="0.14"
+        android:paddingStart="24dp"
+        android:paddingEnd="24dp"
+        android:layout_marginBottom="4dp"/>
+
+    <ListView
+        android:id="@+id/lvDevices"
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1"
+        android:divider="@null"
+        android:paddingStart="16dp"
+        android:paddingEnd="16dp"
+        android:clipToPadding="false"
+        android:layoutAnimation="@anim/list_layout_anim"/>
+
+    <!-- RECEIVE mode: waiting card (hidden in SEND mode) -->
+    <LinearLayout
+        android:id="@+id/receiveWaitCard"
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1"
+        android:orientation="vertical"
+        android:gravity="center"
+        android:padding="32dp"
+        android:visibility="gone">
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="📲"
+            android:textSize="64sp"
+            android:gravity="center"
+            android:layout_marginBottom="24dp"/>
+
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="You're Visible"
+            android:textColor="@color/ws_on_surface"
+            android:textSize="22sp"
+            android:textStyle="bold"
+            android:gravity="center"
+            android:layout_marginBottom="12dp"/>
+
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="Open WillyShare on the sender's device, tap Send, and select your device from their list."
+            android:textColor="@color/ws_on_surface_dim"
+            android:textSize="14sp"
+            android:gravity="center"
+            android:lineSpacingMultiplier="1.4"/>
+    </LinearLayout>
+
+</LinearLayout>

@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Day / light theme -->
+    <color name="ws_bg">#F0F4F8</color>
+    <color name="ws_surface">#FFFFFF</color>
+    <color name="ws_surface2">#EAF0F7</color>
+    <color name="ws_on_surface">#0D1B2A</color>
+    <color name="ws_on_surface_dim">#4A6D8F</color>
+    <color name="ws_on_surface_faint">#B0C4D8</color>
+    <color name="ws_accent">#1A6FEE</color>
+    <color name="ws_accent_dim">#2A5FA0</color>
+    <color name="ws_stroke">#C8DAF0</color>
+    <color name="ws_divider">#D8E8F5</color>
+    <color name="ws_icon_bg">#E0EAF8</color>
+    <color name="ws_status_bar">#F0F4F8</color>
+</resources>

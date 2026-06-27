@@ -1,0 +1,182 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="@color/ws_bg"
+    android:orientation="vertical"
+    android:gravity="center_horizontal"
+    android:padding="28dp">
+
+    <TextView
+        android:id="@+id/tvTransferIcon"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="⚡"
+        android:textSize="56sp"
+        android:gravity="center"
+        android:layout_marginTop="24dp"/>
+
+    <!-- Status + file counter row -->
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:gravity="center"
+        android:layout_marginTop="8dp">
+
+        <TextView
+            android:id="@+id/tvStatus"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="SENDING"
+            android:textColor="@color/ws_on_surface_dim"
+            android:textSize="13sp"
+            android:letterSpacing="0.12"/>
+
+        <TextView
+            android:id="@+id/tvFileCounter"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text=""
+            android:textColor="@color/ws_accent"
+            android:textSize="13sp"
+            android:layout_marginStart="12dp"/>
+    </LinearLayout>
+
+    <TextView
+        android:id="@+id/tvFileName"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="—"
+        android:textColor="@color/ws_on_surface"
+        android:textSize="18sp"
+        android:textStyle="bold"
+        android:gravity="center"
+        android:maxLines="2"
+        android:ellipsize="middle"
+        android:layout_marginTop="16dp"/>
+
+    <!-- Speed (large) -->
+    <TextView
+        android:id="@+id/tvSpeed"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="0 KB/s"
+        android:textColor="@color/ws_accent"
+        android:textSize="40sp"
+        android:textStyle="bold"
+        android:layout_marginTop="20dp"/>
+
+    <!-- ETA row -->
+    <LinearLayout
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:gravity="center"
+        android:layout_marginTop="4dp">
+
+        <TextView
+            android:id="@+id/tvPercent"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="0%"
+            android:textColor="@color/ws_on_surface_dim"
+            android:textSize="14sp"/>
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="  ·  "
+            android:textColor="@color/ws_on_surface_faint"
+            android:textSize="14sp"/>
+
+        <TextView
+            android:id="@+id/tvEta"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text=""
+            android:textColor="@color/ws_on_surface_dim"
+            android:textSize="14sp"/>
+    </LinearLayout>
+
+    <ProgressBar
+        android:id="@+id/progressBar"
+        style="?android:attr/progressBarStyleHorizontal"
+        android:layout_width="match_parent"
+        android:layout_height="14dp"
+        android:max="100"
+        android:progressDrawable="@drawable/bg_progress_track"
+        android:layout_marginTop="16dp"/>
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:layout_marginTop="10dp">
+
+        <TextView
+            android:id="@+id/tvBytesSent"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:text="0 B sent"
+            android:textColor="@color/ws_accent_dim"
+            android:textSize="12sp"/>
+
+        <TextView
+            android:id="@+id/tvTotalSize"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="of 0 B"
+            android:textColor="@color/ws_accent_dim"
+            android:textSize="12sp"/>
+    </LinearLayout>
+
+    <View
+        android:layout_width="match_parent"
+        android:layout_height="1dp"
+        android:background="@color/ws_divider"
+        android:layout_marginTop="28dp"
+        android:layout_marginBottom="20dp"/>
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal">
+
+        <Button
+            android:id="@+id/btnPauseResume"
+            android:layout_width="0dp"
+            android:layout_height="52dp"
+            android:layout_weight="1"
+            android:layout_marginEnd="10dp"
+            android:background="@drawable/bg_button_secondary"
+            android:text="Pause"
+            android:textColor="@color/ws_accent"
+            android:textSize="15sp"
+            android:stateListAnimator="@null"/>
+
+        <Button
+            android:id="@+id/btnCancel"
+            android:layout_width="0dp"
+            android:layout_height="52dp"
+            android:layout_weight="1"
+            android:background="@drawable/bg_button_danger"
+            android:text="Cancel"
+            android:textColor="#FFFFFF"
+            android:textSize="15sp"
+            android:textStyle="bold"
+            android:stateListAnimator="@null"/>
+    </LinearLayout>
+
+    <!-- Peak speed note (shows after transfer completes) -->
+    <TextView
+        android:id="@+id/tvPeakSpeed"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text=""
+        android:textColor="@color/ws_on_surface_faint"
+        android:textSize="11sp"
+        android:layout_marginTop="16dp"/>
+
+</LinearLayout>

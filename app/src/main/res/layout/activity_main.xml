@@ -1,0 +1,316 @@
+<?xml version="1.0" encoding="utf-8"?>
+<ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="@color/ws_bg"
+    android:fillViewport="true">
+
+    <LinearLayout
+        android:id="@+id/rootLayout"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="vertical"
+        android:gravity="center_horizontal"
+        android:paddingStart="24dp"
+        android:paddingEnd="24dp"
+        android:paddingBottom="32dp">
+
+        <!-- Hero block -->
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical"
+            android:gravity="center"
+            android:paddingTop="52dp"
+            android:paddingBottom="12dp">
+
+            <FrameLayout
+                android:layout_width="84dp"
+                android:layout_height="84dp">
+                <View
+                    android:layout_width="84dp"
+                    android:layout_height="84dp"
+                    android:background="@color/ws_icon_bg"/>
+                <TextView
+                    android:id="@+id/tvLogo"
+                    android:layout_width="match_parent"
+                    android:layout_height="match_parent"
+                    android:text="⚡"
+                    android:textSize="44sp"
+                    android:gravity="center"/>
+            </FrameLayout>
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="WillyShare"
+                android:textColor="@color/ws_on_surface"
+                android:textSize="34sp"
+                android:textStyle="bold"
+                android:letterSpacing="0.04"
+                android:layout_marginTop="14dp"/>
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="Fast · Wireless · Parallel"
+                android:textColor="@color/ws_on_surface_dim"
+                android:textSize="13sp"
+                android:letterSpacing="0.14"
+                android:layout_marginTop="5dp"/>
+        </LinearLayout>
+
+        <!-- Section label -->
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="TRANSFER"
+            android:textColor="@color/ws_accent_dim"
+            android:textSize="10.5sp"
+            android:letterSpacing="0.20"
+            android:layout_marginTop="28dp"
+            android:layout_marginBottom="10dp"/>
+
+        <!-- Send card -->
+        <LinearLayout
+            android:id="@+id/cardSend"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:background="@drawable/bg_card"
+            android:orientation="horizontal"
+            android:gravity="center_vertical"
+            android:padding="18dp"
+            android:layout_marginBottom="10dp"
+            android:clickable="true"
+            android:focusable="true"
+            android:elevation="4dp">
+
+            <LinearLayout
+                android:layout_width="52dp"
+                android:layout_height="52dp"
+                android:background="@color/ws_icon_bg"
+                android:gravity="center">
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="📤"
+                    android:textSize="26sp"/>
+            </LinearLayout>
+
+            <LinearLayout
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:orientation="vertical"
+                android:layout_marginStart="16dp">
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="Send Files"
+                    android:textColor="@color/ws_on_surface"
+                    android:textSize="17sp"
+                    android:textStyle="bold"/>
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="Share to a nearby device over Wi-Fi"
+                    android:textColor="@color/ws_on_surface_dim"
+                    android:textSize="12.5sp"
+                    android:layout_marginTop="3dp"/>
+            </LinearLayout>
+
+            <TextView
+                android:layout_width="32dp"
+                android:layout_height="32dp"
+                android:text="›"
+                android:textColor="@color/ws_accent"
+                android:textSize="26sp"
+                android:gravity="center"/>
+        </LinearLayout>
+
+        <!-- Receive card -->
+        <LinearLayout
+            android:id="@+id/cardReceive"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:background="@drawable/bg_card"
+            android:orientation="horizontal"
+            android:gravity="center_vertical"
+            android:padding="18dp"
+            android:layout_marginBottom="10dp"
+            android:clickable="true"
+            android:focusable="true"
+            android:elevation="4dp">
+
+            <LinearLayout
+                android:layout_width="52dp"
+                android:layout_height="52dp"
+                android:background="@color/ws_icon_bg"
+                android:gravity="center">
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="📥"
+                    android:textSize="26sp"/>
+            </LinearLayout>
+
+            <LinearLayout
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:orientation="vertical"
+                android:layout_marginStart="16dp">
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="Receive Files"
+                    android:textColor="@color/ws_on_surface"
+                    android:textSize="17sp"
+                    android:textStyle="bold"/>
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="Accept an incoming transfer"
+                    android:textColor="@color/ws_on_surface_dim"
+                    android:textSize="12.5sp"
+                    android:layout_marginTop="3dp"/>
+            </LinearLayout>
+
+            <TextView
+                android:layout_width="32dp"
+                android:layout_height="32dp"
+                android:text="›"
+                android:textColor="@color/ws_accent"
+                android:textSize="26sp"
+                android:gravity="center"/>
+        </LinearLayout>
+
+        <!-- Section label -->
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="ACTIVITY"
+            android:textColor="@color/ws_accent_dim"
+            android:textSize="10.5sp"
+            android:letterSpacing="0.20"
+            android:layout_marginTop="10dp"
+            android:layout_marginBottom="10dp"/>
+
+        <!-- History card -->
+        <LinearLayout
+            android:id="@+id/cardHistory"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:background="@drawable/bg_card"
+            android:orientation="horizontal"
+            android:gravity="center_vertical"
+            android:padding="18dp"
+            android:clickable="true"
+            android:focusable="true"
+            android:elevation="4dp">
+
+            <LinearLayout
+                android:layout_width="52dp"
+                android:layout_height="52dp"
+                android:background="@color/ws_icon_bg"
+                android:gravity="center">
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="📋"
+                    android:textSize="26sp"/>
+            </LinearLayout>
+
+            <LinearLayout
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:orientation="vertical"
+                android:layout_marginStart="16dp">
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="History"
+                    android:textColor="@color/ws_on_surface"
+                    android:textSize="17sp"
+                    android:textStyle="bold"/>
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="View past transfers"
+                    android:textColor="@color/ws_on_surface_dim"
+                    android:textSize="12.5sp"
+                    android:layout_marginTop="3dp"/>
+            </LinearLayout>
+
+            <TextView
+                android:layout_width="32dp"
+                android:layout_height="32dp"
+                android:text="›"
+                android:textColor="@color/ws_accent"
+                android:textSize="26sp"
+                android:gravity="center"/>
+        </LinearLayout>
+
+        <!-- Divider -->
+        <View
+            android:layout_width="match_parent"
+            android:layout_height="1dp"
+            android:background="@color/ws_divider"
+            android:layout_marginTop="32dp"
+            android:layout_marginBottom="16dp"/>
+
+        <!-- Stats row -->
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:gravity="center">
+
+            <LinearLayout android:layout_width="0dp" android:layout_height="wrap_content"
+                android:layout_weight="1" android:orientation="vertical" android:gravity="center">
+                <TextView android:layout_width="wrap_content" android:layout_height="wrap_content"
+                    android:text="4" android:textColor="@color/ws_accent"
+                    android:textSize="20sp" android:textStyle="bold"/>
+                <TextView android:layout_width="wrap_content" android:layout_height="wrap_content"
+                    android:text="STREAMS" android:textColor="@color/ws_on_surface_faint"
+                    android:textSize="9sp" android:letterSpacing="0.12"/>
+            </LinearLayout>
+
+            <View android:layout_width="1dp" android:layout_height="28dp"
+                android:background="@color/ws_divider"/>
+
+            <LinearLayout android:layout_width="0dp" android:layout_height="wrap_content"
+                android:layout_weight="1" android:orientation="vertical" android:gravity="center">
+                <TextView android:layout_width="wrap_content" android:layout_height="wrap_content"
+                    android:text="5GHz" android:textColor="@color/ws_accent"
+                    android:textSize="20sp" android:textStyle="bold"/>
+                <TextView android:layout_width="wrap_content" android:layout_height="wrap_content"
+                    android:text="WI-FI" android:textColor="@color/ws_on_surface_faint"
+                    android:textSize="9sp" android:letterSpacing="0.12"/>
+            </LinearLayout>
+
+            <View android:layout_width="1dp" android:layout_height="28dp"
+                android:background="@color/ws_divider"/>
+
+            <LinearLayout android:layout_width="0dp" android:layout_height="wrap_content"
+                android:layout_weight="1" android:orientation="vertical" android:gravity="center">
+                <TextView android:layout_width="wrap_content" android:layout_height="wrap_content"
+                    android:text="P2P" android:textColor="@color/ws_accent"
+                    android:textSize="20sp" android:textStyle="bold"/>
+                <TextView android:layout_width="wrap_content" android:layout_height="wrap_content"
+                    android:text="DIRECT" android:textColor="@color/ws_on_surface_faint"
+                    android:textSize="9sp" android:letterSpacing="0.12"/>
+            </LinearLayout>
+        </LinearLayout>
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="No cloud. No account. Just speed."
+            android:textColor="@color/ws_on_surface_faint"
+            android:textSize="11sp"
+            android:layout_marginTop="20dp"/>
+
+    </LinearLayout>
+</ScrollView>
