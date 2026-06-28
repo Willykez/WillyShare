@@ -7,34 +7,12 @@ import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
 import android.os.Message;
-import android.view.LayoutInflater;
-import android.view.View;
-import android.view.ViewGroup;
-import android.widget.BaseAdapter;
-import android.widget.Button;
-import android.widget.ListView;
-import android.widget.TextView;
-import android.widget.Toast;
+import android.view.*;
+import android.widget.*;
 import androidx.appcompat.app.AppCompatActivity;
 import java.util.ArrayList;
 import java.util.List;
 
-/**
- * ScanActivity — QuickShare-style device discovery.
- *
- * SEND mode:
- *   - Scans for nearby WiFi Direct peers
- *   - Shows animated device list as peers appear
- *   - User taps a device → P2P connect → goes to FilePickerActivity
- *
- * RECEIVE mode:
- *   - Shows "Waiting — you're visible to senders" state
- *   - No device list (receiver doesn't need to pick anyone)
- *   - When a sender connects → auto-navigates to TransferActivity
- *
- * Both modes use WiFi Direct (WifiP2pManager) instead of Bluetooth for
- * fast discovery and a 5 GHz direct link.
- */
 public class ScanActivity extends AppCompatActivity {
 
     private TextView      tvScanTitle, tvScanStatus, tvRadarIcon, tvThisDeviceName;
@@ -44,30 +22,32 @@ public class ScanActivity extends AppCompatActivity {
     private DeviceAdapter adapter;
 
     private final List<WifiP2pDevice> deviceList = new ArrayList<>();
-    private DeviceDiscoveryManager discoveryManager;
-    private String mode;
+    private DeviceDiscoveryManager    discoveryManager;
+    private String                    mode;
+    // once we've launched the next screen, ignore any further connection events
+    private boolean                   launched = false;
 
     private final Handler discoveryHandler = new Handler(Looper.getMainLooper()) {
-        @Override
-        public void handleMessage(Message msg) {
+        @Override public void handleMessage(Message msg) {
             switch (msg.what) {
+
                 case DeviceDiscoveryManager.MSG_DEVICES_UPDATED:
                     //noinspection unchecked
                     List<WifiP2pDevice> peers = (List<WifiP2pDevice>) msg.obj;
                     deviceList.clear();
                     deviceList.addAll(peers);
                     adapter.notifyDataSetChanged();
-                    updateScanStatus();
+                    updateStatus();
                     break;
 
                 case DeviceDiscoveryManager.MSG_CONNECTED:
-                    handleP2pConnected((WifiP2pInfo) msg.obj);
+                    if (!launched) handleConnected((WifiP2pInfo) msg.obj);
                     break;
 
                 case DeviceDiscoveryManager.MSG_CONNECT_FAILED:
                     Toast.makeText(ScanActivity.this,
                             "Connection failed — try again", Toast.LENGTH_SHORT).show();
-                    btnRefresh.setEnabled(true);
+                    if (btnRefresh != null) btnRefresh.setEnabled(true);
                     break;
 
                 case DeviceDiscoveryManager.MSG_DISCOVERY_STARTED:
@@ -80,9 +60,8 @@ public class ScanActivity extends AppCompatActivity {
 
                 case DeviceDiscoveryManager.MSG_THIS_DEVICE:
                     WifiP2pDevice me = (WifiP2pDevice) msg.obj;
-                    if (tvThisDeviceName != null && me != null) {
-                        tvThisDeviceName.setText("This device: " + me.deviceName);
-                    }
+                    if (tvThisDeviceName != null && me != null)
+                        tvThisDeviceName.setText(me.deviceName);
                     break;
             }
         }
@@ -94,148 +73,126 @@ public class ScanActivity extends AppCompatActivity {
         setContentView(R.layout.activity_scan);
 
         mode = getIntent().getStringExtra("mode");
-        discoveryManager = new DeviceDiscoveryManager(this, discoveryHandler);
+        // isSender=true → groupOwnerIntent=0 for sender; false → 15 for receiver
+        discoveryManager = new DeviceDiscoveryManager(this, discoveryHandler,
+                "send".equals(mode));
 
-        // Views
-        tvScanTitle       = findViewById(R.id.tvScanTitle);
-        tvScanStatus      = findViewById(R.id.tvScanStatus);
-        tvRadarIcon       = findViewById(R.id.tvRadarIcon);
-        tvThisDeviceName  = findViewById(R.id.tvThisDeviceName);
-        btnRefresh        = findViewById(R.id.btnRefresh);
-        lvDevices         = findViewById(R.id.lvDevices);
-        receiveWaitCard   = findViewById(R.id.receiveWaitCard);
+        tvScanTitle      = findViewById(R.id.tvScanTitle);
+        tvScanStatus     = findViewById(R.id.tvScanStatus);
+        tvRadarIcon      = findViewById(R.id.tvRadarIcon);
+        tvThisDeviceName = findViewById(R.id.tvThisDeviceName);
+        btnRefresh       = findViewById(R.id.btnRefresh);
+        lvDevices        = findViewById(R.id.lvDevices);
+        receiveWaitCard  = findViewById(R.id.receiveWaitCard);
 
         adapter = new DeviceAdapter();
         lvDevices.setAdapter(adapter);
-
         AnimUtils.pulse(tvRadarIcon);
 
-        if ("send".equals(mode)) {
-            setupSendMode();
-        } else {
-            setupReceiveMode();
-        }
+        if ("send".equals(mode)) setupSend();
+        else                     setupReceive();
     }
 
-    // ─── SEND mode ────────────────────────────────────────────────────────────
+    // ── SEND ──────────────────────────────────────────────────────────────────
 
-    private void setupSendMode() {
+    private void setupSend() {
         tvScanTitle.setText("Find a Device");
-        if (receiveWaitCard != null) receiveWaitCard.setVisibility(View.GONE);
+        receiveWaitCard.setVisibility(View.GONE);
         lvDevices.setVisibility(View.VISIBLE);
+        if (btnRefresh != null) btnRefresh.setVisibility(View.VISIBLE);
 
         btnRefresh.setOnClickListener(v -> {
             AnimUtils.buttonPress(v);
             deviceList.clear();
             adapter.notifyDataSetChanged();
+            tvScanStatus.setText("Scanning…");
             discoveryManager.startScan();
         });
 
         lvDevices.setOnItemClickListener((parent, view, pos, id) -> {
-            WifiP2pDevice device = deviceList.get(pos);
+            WifiP2pDevice dev = deviceList.get(pos);
             AnimUtils.buttonPress(view);
-            tvScanStatus.setText("Connecting to " + device.deviceName + "…");
+            tvScanStatus.setText("Connecting to " + dev.deviceName + "…");
             btnRefresh.setEnabled(false);
-            discoveryManager.connectToDevice(device);
+            discoveryManager.connectToDevice(dev);
         });
 
-        // Auto-start scan
         discoveryManager.startScan();
     }
 
-    // ─── RECEIVE mode ─────────────────────────────────────────────────────────
+    // ── RECEIVE ───────────────────────────────────────────────────────────────
 
-    private void setupReceiveMode() {
+    private void setupReceive() {
         tvScanTitle.setText("Waiting for Sender");
-        if (receiveWaitCard != null) receiveWaitCard.setVisibility(View.VISIBLE);
+        receiveWaitCard.setVisibility(View.VISIBLE);
         lvDevices.setVisibility(View.GONE);
-        btnRefresh.setVisibility(View.GONE);
-
-        tvScanStatus.setText("You're visible — waiting for a device to connect…");
-
-        // Start TransferService in receive mode so it's ready for data
-        Intent svc = new Intent(this, TransferService.class);
-        svc.setAction(TransferService.ACTION_RECEIVE);
-        startForegroundService(svc);
-
-        // P2P: become discoverable and wait
+        if (btnRefresh != null) btnRefresh.setVisibility(View.GONE);
+        tvScanStatus.setText("You're visible — waiting…");
         discoveryManager.startReceiving();
     }
 
-    // ─── P2P Connected ────────────────────────────────────────────────────────
+    // ── P2P connected ─────────────────────────────────────────────────────────
 
-    private void handleP2pConnected(WifiP2pInfo info) {
-        String remoteIp;
+    private void handleConnected(WifiP2pInfo info) {
+        launched = true; // prevent double-launch
 
-        if (info.isGroupOwner) {
-            // We are the Group Owner — remote client is at a DHCP-assigned IP.
-            // We can't know the exact IP here; use the standard P2P GO address.
-            // The sender typically is NOT the GO; swap roles: receiver is GO.
-            // In practice: receiver starts as GO; sender connects as client.
-            // The sender's IP is not in WifiP2pInfo for the GO side.
-            // We use the receiver-is-GO pattern: receiver knows its own IP (192.168.49.1)
-            // The TransferEngine on the sender side connects OUT to us.
-            // So receiver just starts receiving on PORT — sender already knows GO IP.
-            remoteIp = info.groupOwnerAddress != null
-                    ? info.groupOwnerAddress.getHostAddress()
-                    : HotspotManager.HOST_IP;
-        } else {
-            // We are the client — group owner IP is the remote host
-            remoteIp = info.groupOwnerAddress != null
-                    ? info.groupOwnerAddress.getHostAddress()
-                    : HotspotManager.HOST_IP;
-        }
+        // The Group Owner always gets 192.168.49.1.
+        // Sender is always client → connects TO that address.
+        // Receiver is always GO → listens ON that address.
+        String remoteIp = (info.groupOwnerAddress != null)
+                ? info.groupOwnerAddress.getHostAddress()
+                : HotspotManager.HOST_IP;
 
         if ("send".equals(mode)) {
-            // Sender: now we know the receiver's IP (group owner addr), go pick files
-            Toast.makeText(this, "Connected! Pick files to send.", Toast.LENGTH_SHORT).show();
+            // Sender: go to file picker so user can choose files
+            Toast.makeText(this, "Connected — pick files to send", Toast.LENGTH_SHORT).show();
             Intent i = new Intent(this, FilePickerActivity.class);
             i.putExtra("remoteIp", remoteIp);
             startActivity(i);
             overridePendingTransition(R.anim.slide_in_right, R.anim.slide_out_left);
+            // Don't finish() — user may press back from picker to re-select device
         } else {
-            // Receiver: sender connected — go to transfer screen
+            // Receiver: go straight to transfer screen to start listening
             Toast.makeText(this, "Sender connected!", Toast.LENGTH_SHORT).show();
             Intent i = new Intent(this, TransferActivity.class);
             i.putExtra("mode", "receive");
             i.putExtra("remoteIp", remoteIp);
-            i.putExtra("port", HotspotManager.TRANSFER_PORT);
             startActivity(i);
             overridePendingTransition(R.anim.slide_in_right, R.anim.slide_out_left);
+            finish(); // receiver doesn't need to come back to scan
         }
     }
 
-    // ─── UI helpers ───────────────────────────────────────────────────────────
+    // ── UI helpers ────────────────────────────────────────────────────────────
 
-    private void setScanning(boolean scanning) {
-        if (scanning) {
+    private void setScanning(boolean on) {
+        if (on) {
             tvScanStatus.setText("Scanning for devices…");
             AnimUtils.pulse(tvRadarIcon);
-            btnRefresh.setEnabled(false);
+            if (btnRefresh != null) btnRefresh.setEnabled(false);
         } else {
             AnimUtils.stopPulse(tvRadarIcon);
-            if ("send".equals(mode)) {
-                tvScanStatus.setText(deviceList.isEmpty()
-                        ? "No devices found — tap Refresh"
-                        : deviceList.size() + " device(s) found");
-            }
-            btnRefresh.setEnabled(true);
+            if ("send".equals(mode)) updateStatus();
+            if (btnRefresh != null) btnRefresh.setEnabled(true);
         }
     }
 
-    private void updateScanStatus() {
+    private void updateStatus() {
         if ("send".equals(mode)) {
             tvScanStatus.setText(deviceList.isEmpty()
                     ? "No devices found — tap Refresh"
-                    : deviceList.size() + " device(s) found nearby");
+                    : deviceList.size() + " device(s) nearby");
         }
     }
 
-    // ─── Lifecycle ────────────────────────────────────────────────────────────
+    @Override protected void onResume() {
+        super.onResume();
+        launched = false; // allow re-connection if user comes back to this screen
+        discoveryManager.register();
+    }
 
-    @Override protected void onResume()  { super.onResume();  discoveryManager.register(); }
     @Override protected void onPause()   { super.onPause();   discoveryManager.unregister(); }
-    @Override protected void onDestroy() { super.onDestroy(); discoveryManager.stopScan(); }
+    @Override protected void onDestroy() { super.onDestroy(); discoveryManager.stopScan();   }
 
     @Override
     public void onBackPressed() {
@@ -244,29 +201,27 @@ public class ScanActivity extends AppCompatActivity {
         overridePendingTransition(R.anim.slide_in_left, R.anim.slide_out_right);
     }
 
-    // ─── Device list adapter ─────────────────────────────────────────────────
+    // ── Device list adapter ───────────────────────────────────────────────────
 
     private class DeviceAdapter extends BaseAdapter {
-        @Override public int getCount()               { return deviceList.size(); }
-        @Override public WifiP2pDevice getItem(int p) { return deviceList.get(p); }
-        @Override public long getItemId(int p)        { return p; }
+        @Override public int getCount()              { return deviceList.size(); }
+        @Override public WifiP2pDevice getItem(int p){ return deviceList.get(p); }
+        @Override public long getItemId(int p)       { return p; }
 
         @Override
-        public View getView(int pos, View convertView, ViewGroup parent) {
-            if (convertView == null) {
-                convertView = LayoutInflater.from(ScanActivity.this)
-                        .inflate(R.layout.item_device, parent, false);
-            }
-            WifiP2pDevice dev = deviceList.get(pos);
-            TextView tvName = convertView.findViewById(R.id.tvDeviceName);
-            TextView tvAddr = convertView.findViewById(R.id.tvDeviceAddr);
-            TextView tvBadge= convertView.findViewById(R.id.tvDeviceBadge);
+        public View getView(int pos, View cv, ViewGroup parent) {
+            if (cv == null) cv = LayoutInflater.from(ScanActivity.this)
+                    .inflate(R.layout.item_device, parent, false);
 
-            tvName.setText(dev.deviceName != null && !dev.deviceName.isEmpty()
+            WifiP2pDevice dev   = deviceList.get(pos);
+            TextView tvName     = cv.findViewById(R.id.tvDeviceName);
+            TextView tvAddr     = cv.findViewById(R.id.tvDeviceAddr);
+            TextView tvBadge    = cv.findViewById(R.id.tvDeviceBadge);
+
+            tvName.setText((dev.deviceName != null && !dev.deviceName.isEmpty())
                     ? dev.deviceName : "Unknown Device");
             tvAddr.setText(dev.deviceAddress);
 
-            // Status badge
             if (tvBadge != null) {
                 switch (dev.status) {
                     case WifiP2pDevice.CONNECTED:
@@ -279,17 +234,14 @@ public class ScanActivity extends AppCompatActivity {
                         break;
                     default:
                         tvBadge.setVisibility(View.GONE);
-                        break;
                 }
             }
 
-            // Stagger entrance animation
-            convertView.setAlpha(0f);
-            convertView.setTranslationX(40f);
-            convertView.animate().alpha(1f).translationX(0f)
-                    .setStartDelay(pos * 60L).setDuration(280).start();
-
-            return convertView;
+            cv.setAlpha(0f);
+            cv.setTranslationX(40f);
+            cv.animate().alpha(1f).translationX(0f)
+                    .setStartDelay(pos * 55L).setDuration(260).start();
+            return cv;
         }
     }
 }

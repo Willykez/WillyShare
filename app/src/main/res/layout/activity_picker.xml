@@ -94,6 +94,20 @@
         </LinearLayout>
     </HorizontalScrollView>
 
+    <!-- Empty state hint -->
+    <TextView
+        android:id="@+id/tvEmptyHint"
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1"
+        android:gravity="center"
+        android:padding="32dp"
+        android:text="Tap  + Add  to select files\nYou can add multiple batches"
+        android:textColor="@color/ws_on_surface_faint"
+        android:textSize="15sp"
+        android:lineSpacingMultiplier="1.6"
+        android:visibility="gone"/>
+
     <!-- File list -->
     <ListView
         android:id="@+id/lvFiles"

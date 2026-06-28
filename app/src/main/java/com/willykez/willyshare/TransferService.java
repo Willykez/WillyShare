@@ -6,64 +6,45 @@ import android.app.NotificationManager;
 import android.app.Service;
 import android.content.Intent;
 import android.os.Build;
-import android.os.Handler;
 import android.os.IBinder;
-import android.os.Looper;
-import android.os.Message;
 import androidx.annotation.Nullable;
 import androidx.core.app.NotificationCompat;
-import java.util.ArrayList;
 
+/**
+ * TransferService — foreground service that keeps the process alive.
+ *
+ * CRITICAL FIX: This service NO LONGER creates or runs a TransferEngine.
+ * The engine lives in TransferActivity where the UI handler is. Previously
+ * the service was creating a SECOND engine that was competing for the same
+ * server ports as TransferActivity's engine, causing:
+ *  - Receiver stuck on "Waiting" (service engine stole the connections)
+ *  - 0-byte or half-written files (two RandomAccessFile writers on same path)
+ *  - TransferActivity never receiving progress updates (wrong engine had the sockets)
+ *
+ * The service now only:
+ *  1. Starts the foreground notification (keeps process alive during transfer)
+ *  2. Updates the notification text when TransferActivity tells it to via Intent
+ *  3. Stops itself on cancel/done
+ */
 public class TransferService extends Service {
-    public static final String ACTION_SEND = "ACTION_SEND";
-    public static final String ACTION_RECEIVE = "ACTION_RECEIVE";
-    public static final String ACTION_PAUSE = "ACTION_PAUSE";
-    public static final String ACTION_CANCEL = "ACTION_CANCEL";
-    public static final String EXTRA_FILES = "extra_files";
-    public static final String EXTRA_REMOTE_IP = "extra_remote_ip";
-    public static final String EXTRA_PORT = "extra_port";
 
-    private static final String CHANNEL_ID = "willyshare_channel";
-    private static final int NOTIF_ID = 1;
+    public static final String ACTION_SEND          = "ACTION_SEND";
+    public static final String ACTION_RECEIVE       = "ACTION_RECEIVE";
+    public static final String ACTION_CANCEL        = "ACTION_CANCEL";
+    public static final String ACTION_UPDATE_NOTIF  = "ACTION_UPDATE_NOTIF";
+    public static final String EXTRA_NOTIF_TEXT     = "extra_notif_text";
 
-    private TransferEngine engine;
+    private static final String CHANNEL_ID = "willyshare_transfer";
+    private static final int    NOTIF_ID   = 1;
+
     private NotificationManager notifManager;
-    private boolean isPaused = false;
-
-    private final Handler engineHandler = new Handler(Looper.getMainLooper()) {
-        @Override
-        public void handleMessage(Message msg) {
-            switch (msg.what) {
-                case TransferEngine.MSG_PROGRESS:
-                    updateNotification("Transferring: " + msg.obj + " - " + msg.arg1 + "%");
-                    break;
-                case TransferEngine.MSG_SPEED:
-                    break;
-                case TransferEngine.MSG_FILE_DONE:
-                    updateNotification("✓ " + msg.obj);
-                    break;
-                case TransferEngine.MSG_DONE:
-                    updateNotification("Complete: " + msg.obj);
-                    stopSelf();
-                    break;
-                case TransferEngine.MSG_CANCELLED:
-                    updateNotification("Transfer cancelled");
-                    stopSelf();
-                    break;
-                case TransferEngine.MSG_ERROR:
-                    updateNotification("⚠ " + msg.obj);
-                    break;
-            }
-        }
-    };
 
     @Override
     public void onCreate() {
         super.onCreate();
         notifManager = (NotificationManager) getSystemService(NOTIFICATION_SERVICE);
-        createNotificationChannel();
-        engine = new TransferEngine(this, engineHandler);
-        startForeground(NOTIF_ID, buildNotification("WillyShare running..."));
+        createChannel();
+        startForeground(NOTIF_ID, buildNotification("Transfer running…"));
     }
 
     @Override
@@ -74,43 +55,35 @@ public class TransferService extends Service {
 
         switch (action) {
             case ACTION_SEND:
-                ArrayList<String> files = intent.getStringArrayListExtra(EXTRA_FILES);
-                String ip = intent.getStringExtra(EXTRA_REMOTE_IP);
-                int port = intent.getIntExtra(EXTRA_PORT, TransferEngine.PORT);
-                if (files != null && ip != null) engine.sendFiles(files, ip, port);
+                updateNotification("Sending files…");
                 break;
             case ACTION_RECEIVE:
-                engine.startReceiving();
+                updateNotification("Waiting to receive…");
                 break;
-            case ACTION_PAUSE:
-                isPaused = !isPaused;
-                engine.setPaused(isPaused);
+            case ACTION_UPDATE_NOTIF:
+                String text = intent.getStringExtra(EXTRA_NOTIF_TEXT);
+                if (text != null) updateNotification(text);
                 break;
             case ACTION_CANCEL:
-                engine.cancel();
-                engine.stopReceiving();
+                updateNotification("Transfer cancelled");
                 stopSelf();
                 break;
         }
         return START_NOT_STICKY;
     }
 
-    @Nullable
-    @Override
+    @Nullable @Override
     public IBinder onBind(Intent intent) { return null; }
 
     @Override
-    public void onDestroy() {
-        engine.cancel();
-        engine.stopReceiving();
-        super.onDestroy();
-    }
+    public void onDestroy() { super.onDestroy(); }
 
-    private void createNotificationChannel() {
+    private void createChannel() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            NotificationChannel channel = new NotificationChannel(
+            NotificationChannel ch = new NotificationChannel(
                     CHANNEL_ID, "WillyShare Transfer", NotificationManager.IMPORTANCE_LOW);
-            notifManager.createNotificationChannel(channel);
+            ch.setDescription("File transfer in progress");
+            notifManager.createNotificationChannel(ch);
         }
     }
 
@@ -120,6 +93,7 @@ public class TransferService extends Service {
                 .setContentText(text)
                 .setSmallIcon(android.R.drawable.stat_sys_upload)
                 .setOngoing(true)
+                .setSilent(true)
                 .build();
     }
 

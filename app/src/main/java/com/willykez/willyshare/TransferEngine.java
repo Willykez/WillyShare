@@ -3,88 +3,67 @@ package com.willykez.willyshare;
 import android.content.Context;
 import android.os.Handler;
 import android.util.Log;
-import java.io.DataInputStream;
-import java.io.DataOutputStream;
-import java.io.File;
-import java.io.FileInputStream;
-import java.io.IOException;
-import java.io.RandomAccessFile;
+import java.io.*;
 import java.net.ServerSocket;
 import java.net.Socket;
 import java.util.List;
-import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.CountDownLatch;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
-import java.util.concurrent.atomic.AtomicBoolean;
-import java.util.concurrent.atomic.AtomicLong;
+import java.util.concurrent.*;
+import java.util.concurrent.atomic.*;
 
-/**
- * TransferEngine v3 — fixes + upgrades:
- *
- * BUG FIXES:
- *  1. Cancel no longer fires MSG_DONE — flag checked before latch.await() result used
- *  2. "0 B sent" fixed — actual bytes tracked via AtomicLong, not derived from %
- *  3. Port connection errors reduced — retry logic + sequential fallback for chunk ports
- *  4. Receiver progress fires correctly via MSG_RX_PROGRESS on UI thread
- *
- * UPGRADES:
- *  - MSG_CANCELLED added so UI can show CANCELLED state cleanly
- *  - MSG_FILE_DONE added so UI can show per-file completion tick
- *  - MSG_BYTES added to carry raw byte counts for accurate UI (no % math)
- *  - Retry on connect (3 attempts, 300ms apart) to survive brief P2P delays
- *  - Port range now PORT..PORT+8 (9 sockets: 1 control + 8 data)
- *  - announceFileList includes retry so receiver gets the manifest reliably
- */
 public class TransferEngine {
     private static final String TAG = "TransferEngine";
 
-    public static final int PORT         = 8888;
-    public static final int CONTROL_PORT = 8889; // separate control port avoids collision
-    private static final int THREAD_COUNT = 4;   // reduced from 8 — avoids port exhaustion
-    private static final int BUFFER_SIZE  = 2 * 1024 * 1024; // 2 MB
-    private static final int SOCKET_BUF   = 4 * 1024 * 1024; // 4 MB TCP buffer
-    private static final int CONNECT_RETRIES = 4;
-    private static final int CONNECT_RETRY_MS = 400;
+    public static final int PORT         = 8888; // data ports 8888..8891
+    public static final int CONTROL_PORT = 8893; // filelist announcement
+    private static final int THREAD_COUNT = 4;
+    private static final int BUFFER_SIZE  = 256 * 1024; // 256 KB — reliable for all devices
+    private static final int SOCKET_BUF   = 2 * 1024 * 1024;
+    private static final int CONNECT_RETRIES  = 6;
+    private static final int CONNECT_RETRY_MS = 600;
+    private static final int CONNECT_TIMEOUT  = 5000;
 
-    // Protocol commands
     public static final byte CMD_CHUNK    = 0x01;
     public static final byte CMD_FILELIST = 0x02;
     public static final byte CMD_ACK      = 0x06;
 
-    // UI messages
-    public static final int MSG_PROGRESS   = 100; // send-side: (pct, 0, filename)
-    public static final int MSG_SPEED      = 101; // (speed string)
-    public static final int MSG_DONE       = 102; // all files done: (summary string)
-    public static final int MSG_ERROR      = 103; // (error string) — non-fatal, keeps going
-    public static final int MSG_FILE_START = 104; // (filename, fileIndex, totalFiles)
-    public static final int MSG_RX_PROGRESS= 105; // receive-side: (pct, 0, filename)
-    public static final int MSG_CANCELLED  = 106; // transfer was cancelled
-    public static final int MSG_FILE_DONE  = 107; // (filename) single file completed
-    public static final int MSG_BYTES      = 108; // (bytesDone as Long, totalBytes as Long, filename)
+    // UI message codes
+    public static final int MSG_PROGRESS    = 100;
+    public static final int MSG_SPEED       = 101;
+    public static final int MSG_DONE        = 102;
+    public static final int MSG_ERROR       = 103;
+    public static final int MSG_FILE_START  = 104;
+    public static final int MSG_RX_PROGRESS = 105;
+    public static final int MSG_CANCELLED   = 106;
+    public static final int MSG_FILE_DONE   = 107;
+    public static final int MSG_BYTES       = 108;
 
     private final Context        context;
     private final Handler        uiHandler;
     private final DatabaseHelper db;
     private final SpeedCalculator speedCalc = new SpeedCalculator();
 
-    private volatile boolean   isPaused    = false;
-    private volatile boolean   isCancelled = false;
-    private ExecutorService    pool;
+    private volatile boolean isPaused    = false;
+    private volatile boolean isCancelled = false;
+    private ExecutorService  pool;
 
-    // Receiver state
-    private final ConcurrentHashMap<String, AtomicLong> rxBytesMap  = new ConcurrentHashMap<>();
-    private final ConcurrentHashMap<String, Long>       rxTotalMap  = new ConcurrentHashMap<>();
-    private final ConcurrentHashMap<String, Long>       rxHistoryIds= new ConcurrentHashMap<>();
-    private final ConcurrentHashMap<String, AtomicBoolean> rxDoneMap= new ConcurrentHashMap<>();
+    // ── Receiver state ────────────────────────────────────────────────────────
+    private final ConcurrentHashMap<String, AtomicLong>   rxBytesMap   = new ConcurrentHashMap<>();
+    private final ConcurrentHashMap<String, Long>         rxTotalMap   = new ConcurrentHashMap<>();
+    private final ConcurrentHashMap<String, Long>         rxHistoryIds = new ConcurrentHashMap<>();
+    private final ConcurrentHashMap<String, AtomicBoolean> rxDoneMap   = new ConcurrentHashMap<>();
+    // track expected thread count per file so we know when all chunks are written
+    private final ConcurrentHashMap<String, Integer>      rxThreadsMap = new ConcurrentHashMap<>();
+    private final ConcurrentHashMap<String, AtomicInteger> rxThreadsDone= new ConcurrentHashMap<>();
+    // server sockets held so stopReceiving() can close them
+    private final List<ServerSocket> serverSockets = new CopyOnWriteArrayList<>();
 
-    // Sender state — track actual bytes for display
+    // ── Sender state ──────────────────────────────────────────────────────────
     private final AtomicLong totalBytesSent = new AtomicLong(0);
     private volatile long    grandTotalBytes = 0;
 
-    public TransferEngine(Context ctx, Handler uiHandler) {
+    public TransferEngine(Context ctx, Handler handler) {
         this.context   = ctx.getApplicationContext();
-        this.uiHandler = uiHandler;
+        this.uiHandler = handler;
         this.db        = new DatabaseHelper(ctx);
     }
 
@@ -92,58 +71,62 @@ public class TransferEngine {
 
     public void cancel() {
         isCancelled = true;
+        closeServerSockets();
         if (pool != null) pool.shutdownNow();
-        // Notify UI of cancellation after brief delay so threads can see flag
-        uiHandler.postDelayed(() ->
-            uiHandler.obtainMessage(MSG_CANCELLED).sendToTarget(), 200);
+        uiHandler.postDelayed(() -> uiHandler.obtainMessage(MSG_CANCELLED).sendToTarget(), 150);
     }
 
-    // ─── SENDER ──────────────────────────────────────────────────────────────
+    // ═══════════════════════════════════════════════════════════════════════════
+    //  SENDER
+    // ═══════════════════════════════════════════════════════════════════════════
 
-    public void sendFiles(List<String> filePaths, String remoteIp, int port) {
-        isCancelled   = false;
-        isPaused      = false;
+    public void sendFiles(List<String> filePaths, String remoteIp, int basePort) {
+        isCancelled = false;
+        isPaused    = false;
         totalBytesSent.set(0);
         grandTotalBytes = 0;
         for (String p : filePaths) grandTotalBytes += new File(p).length();
 
-        pool = Executors.newFixedThreadPool(THREAD_COUNT + 4);
+        // Use a simple cached pool — we're serialising files anyway
+        pool = Executors.newFixedThreadPool(THREAD_COUNT + 2);
 
         new Thread(() -> {
-            // Announce file list with retry — receiver may not be listening yet
-            boolean announced = false;
-            for (int attempt = 0; attempt < 5 && !isCancelled; attempt++) {
+            // ── 1. Announce file list (with retry, receiver may not be ready yet) ──
+            for (int attempt = 0; attempt < 8 && !isCancelled; attempt++) {
                 try {
                     announceFileList(filePaths, remoteIp, CONTROL_PORT);
-                    announced = true;
                     break;
                 } catch (Exception e) {
                     Log.w(TAG, "announceFileList attempt " + attempt + ": " + e.getMessage());
-                    try { Thread.sleep(500); } catch (InterruptedException ie) { break; }
+                    if (attempt == 7) {
+                        uiHandler.obtainMessage(MSG_ERROR,
+                                "Cannot reach receiver — make sure it is in Receive mode").sendToTarget();
+                        return;
+                    }
+                    sleep(700);
                 }
-            }
-            if (!announced && !isCancelled) {
-                uiHandler.obtainMessage(MSG_ERROR, "Could not reach receiver — is it in receive mode?").sendToTarget();
-                return;
             }
 
             long sessionStart = System.currentTimeMillis();
+
+            // ── 2. Send each file sequentially ────────────────────────────────
             for (int i = 0; i < filePaths.size() && !isCancelled; i++) {
-                sendSingleFile(filePaths.get(i), remoteIp, port, i, filePaths.size());
+                sendSingleFile(filePaths.get(i), remoteIp, basePort, i, filePaths.size());
             }
+
             if (!isCancelled) {
-                pool.shutdown();
+                if (pool != null) pool.shutdown();
                 long elapsed = System.currentTimeMillis() - sessionStart;
-                String summary = filePaths.size() + " file(s) · " +
-                        FileUtils.formatSize(grandTotalBytes) + " · " +
-                        formatDuration(elapsed);
+                String summary = filePaths.size() + " file(s) · "
+                        + FileUtils.formatSize(grandTotalBytes) + " · "
+                        + formatDuration(elapsed);
                 uiHandler.obtainMessage(MSG_DONE, summary).sendToTarget();
             }
-        }).start();
+        }, "ws-send-coordinator").start();
     }
 
     private void announceFileList(List<String> paths, String remoteIp, int port) throws Exception {
-        try (Socket s = newSocket(remoteIp, port)) {
+        try (Socket s = newSocketWithRetry(remoteIp, port)) {
             DataOutputStream dos = new DataOutputStream(s.getOutputStream());
             dos.writeByte(CMD_FILELIST);
             dos.writeInt(paths.size());
@@ -156,28 +139,34 @@ public class TransferEngine {
                 dos.writeLong(f.length());
             }
             dos.flush();
+            // Wait for receiver ACK so we know the manifest landed
+            DataInputStream dis = new DataInputStream(s.getInputStream());
+            dis.readByte(); // ACK byte from receiver
         }
     }
 
-    private void sendSingleFile(String path, String remoteIp, int port,
+    private void sendSingleFile(String path, String remoteIp, int basePort,
                                 int fileIndex, int totalFiles) {
         File file = new File(path);
-        if (!file.exists()) return;
+        if (!file.exists() || !file.isFile()) return;
 
         long fileSize  = file.length();
         long historyId = db.insertHistory(file.getName(), fileSize, 0, "sending",
                 System.currentTimeMillis(), 1);
-
-        AtomicLong fileSent = new AtomicLong(0);
         speedCalc.reset();
 
+        AtomicLong fileSent = new AtomicLong(0);
         uiHandler.obtainMessage(MSG_FILE_START, fileIndex, totalFiles, file.getName())
                 .sendToTarget();
 
-        // Use fewer threads to avoid "port N not reachable" errors
-        int threads   = Math.min(THREAD_COUNT, (int) Math.max(1, fileSize / (512 * 1024)));
+        // For tiny files use 1 thread; otherwise up to THREAD_COUNT
+        int threads = (fileSize < 512 * 1024) ? 1
+                : Math.min(THREAD_COUNT, (int)(fileSize / (256 * 1024)));
+        if (threads < 1) threads = 1;
+
         long chunkSize = fileSize / threads;
         CountDownLatch latch = new CountDownLatch(threads);
+        AtomicBoolean anyError = new AtomicBoolean(false);
 
         for (int t = 0; t < threads; t++) {
             final int  idx    = t;
@@ -185,10 +174,12 @@ public class TransferEngine {
             final long length = (t == threads - 1) ? (fileSize - offset) : chunkSize;
 
             pool.submit(() -> {
-                Socket socket = null;
+                Socket sock = null;
                 try {
-                    socket = newSocketWithRetry(remoteIp, port + idx);
-                    DataOutputStream dos = new DataOutputStream(socket.getOutputStream());
+                    sock = newSocketWithRetry(remoteIp, basePort + idx);
+                    DataOutputStream dos = new DataOutputStream(sock.getOutputStream());
+
+                    // Write chunk header
                     dos.writeByte(CMD_CHUNK);
                     dos.writeUTF(file.getName());
                     dos.writeLong(fileSize);
@@ -196,19 +187,27 @@ public class TransferEngine {
                     dos.writeLong(length);
                     dos.writeInt(idx);
                     dos.writeInt(fileIndex);
-                    dos.writeInt(threads); // tell receiver how many threads for this file
+                    dos.writeInt(threads); // receiver needs this to know when file is complete
                     dos.flush();
 
-                    DataInputStream dis = new DataInputStream(socket.getInputStream());
-                    dis.readByte(); // ACK
+                    // Wait for receiver ACK before streaming
+                    DataInputStream dis = new DataInputStream(sock.getInputStream());
+                    dis.readByte();
 
+                    // Stream the chunk
+                    byte[] buf = new byte[BUFFER_SIZE];
                     try (FileInputStream fis = new FileInputStream(file)) {
-                        fis.skip(offset);
-                        byte[] buf       = new byte[BUFFER_SIZE];
-                        long   remaining = length;
+                        long skipped = 0;
+                        while (skipped < offset) {
+                            long s = fis.skip(offset - skipped);
+                            if (s <= 0) break;
+                            skipped += s;
+                        }
+                        long remaining = length;
                         while (remaining > 0 && !isCancelled) {
-                            while (isPaused && !isCancelled) Thread.sleep(100);
-                            int read = fis.read(buf, 0, (int) Math.min(buf.length, remaining));
+                            while (isPaused && !isCancelled) sleep(100);
+                            int toRead = (int) Math.min(buf.length, remaining);
+                            int read   = fis.read(buf, 0, toRead);
                             if (read < 0) break;
                             dos.write(buf, 0, read);
                             remaining -= read;
@@ -217,28 +216,27 @@ public class TransferEngine {
                             totalBytesSent.addAndGet(read);
                             speedCalc.update(fSent);
 
-                            // Send actual byte counts, not derived percentages
-                            android.os.Message mBytes = uiHandler.obtainMessage(MSG_BYTES);
-                            mBytes.obj = new long[]{fSent, fileSize,
-                                    totalBytesSent.get(), grandTotalBytes};
-                            mBytes.sendToTarget();
-
                             int pct = (fileSize > 0) ? (int)((fSent * 100L) / fileSize) : 100;
-                            uiHandler.obtainMessage(MSG_PROGRESS, pct, 0, file.getName())
-                                    .sendToTarget();
-                            uiHandler.obtainMessage(MSG_SPEED, speedCalc.getSpeedFormatted())
-                                    .sendToTarget();
+                            uiHandler.obtainMessage(MSG_PROGRESS, pct, 0, file.getName()).sendToTarget();
+                            uiHandler.obtainMessage(MSG_SPEED, speedCalc.getSpeedFormatted()).sendToTarget();
+
+                            android.os.Message mb = uiHandler.obtainMessage(MSG_BYTES);
+                            mb.obj = new long[]{fSent, fileSize, totalBytesSent.get(), grandTotalBytes};
+                            mb.sendToTarget();
+
                             db.updateProgress(historyId, fSent, "sending");
                         }
                         dos.flush();
                     }
                 } catch (Exception e) {
-                    Log.e(TAG, "Send thread " + idx + ": " + e.getMessage());
-                    if (!isCancelled)
-                        uiHandler.obtainMessage(MSG_ERROR, "Thread " + idx + ": " + e.getMessage())
+                    if (!isCancelled) {
+                        Log.e(TAG, "Send chunk " + idx + ": " + e.getMessage());
+                        anyError.set(true);
+                        uiHandler.obtainMessage(MSG_ERROR, "Chunk " + idx + " error: " + e.getMessage())
                                 .sendToTarget();
+                    }
                 } finally {
-                    safeClose(socket);
+                    safeClose(sock);
                     latch.countDown();
                 }
             });
@@ -247,14 +245,16 @@ public class TransferEngine {
         try { latch.await(); } catch (InterruptedException e) { Thread.currentThread().interrupt(); }
 
         if (!isCancelled) {
-            db.updateProgress(historyId, fileSize, "done");
+            db.updateProgress(historyId, fileSize, anyError.get() ? "error" : "done");
             uiHandler.obtainMessage(MSG_FILE_DONE, file.getName()).sendToTarget();
         } else {
             db.updateProgress(historyId, fileSent.get(), "cancelled");
         }
     }
 
-    // ─── RECEIVER ────────────────────────────────────────────────────────────
+    // ═══════════════════════════════════════════════════════════════════════════
+    //  RECEIVER
+    // ═══════════════════════════════════════════════════════════════════════════
 
     public void startReceiving() {
         isCancelled = false;
@@ -263,57 +263,61 @@ public class TransferEngine {
         rxTotalMap.clear();
         rxHistoryIds.clear();
         rxDoneMap.clear();
+        rxThreadsMap.clear();
+        rxThreadsDone.clear();
+        serverSockets.clear();
         speedCalc.reset();
-        pool = Executors.newFixedThreadPool(THREAD_COUNT * 2 + 4);
 
-        // Control port for CMD_FILELIST
-        pool.submit(() -> receiveOnPort(CONTROL_PORT));
+        // One thread per port, plus extras for concurrent file handling
+        pool = Executors.newFixedThreadPool(THREAD_COUNT + 4);
 
-        // Data ports PORT..PORT+THREAD_COUNT-1
+        // Control port
+        pool.submit(() -> startListening(CONTROL_PORT));
+        // Data ports — one ServerSocket per chunk thread
         for (int t = 0; t < THREAD_COUNT; t++) {
-            final int listenPort = PORT + t;
-            pool.submit(() -> receiveOnPort(listenPort));
+            final int port = PORT + t;
+            pool.submit(() -> startListening(port));
         }
     }
 
-    private void receiveOnPort(int listenPort) {
+    private void startListening(int port) {
         ServerSocket ss = null;
         try {
-            ss = new ServerSocket(listenPort);
+            ss = new ServerSocket(port);
             ss.setReuseAddress(true);
-            ss.setSoTimeout(0);
+            serverSockets.add(ss);
+            Log.d(TAG, "Listening on port " + port);
             while (!isCancelled) {
                 Socket client = ss.accept();
                 tuneSocket(client);
                 final Socket fc = client;
-                pool.submit(() -> handleConnection(fc));
+                pool.submit(() -> dispatch(fc));
             }
         } catch (Exception e) {
-            if (!isCancelled) Log.e(TAG, "Recv port " + listenPort + ": " + e.getMessage());
+            if (!isCancelled) Log.e(TAG, "Port " + port + " died: " + e.getMessage());
         } finally {
-            if (ss != null) try { ss.close(); } catch (IOException ignored) {}
+            if (ss != null) { try { ss.close(); } catch (IOException ignored) {} }
         }
     }
 
-    private void handleConnection(Socket socket) {
+    private void dispatch(Socket socket) {
         try {
             DataInputStream dis = new DataInputStream(socket.getInputStream());
             byte cmd = dis.readByte();
-            if (cmd == CMD_FILELIST) handleFileList(dis);
-            else if (cmd == CMD_CHUNK) handleChunk(socket, dis);
+            if      (cmd == CMD_FILELIST) handleFileList(socket, dis);
+            else if (cmd == CMD_CHUNK)    handleChunk(socket, dis);
+            else                          safeClose(socket);
         } catch (Exception e) {
-            if (!isCancelled) {
-                Log.e(TAG, "handleConnection: " + e.getMessage());
-                uiHandler.obtainMessage(MSG_ERROR, e.getMessage()).sendToTarget();
-            }
-        } finally {
+            if (!isCancelled) Log.e(TAG, "dispatch: " + e.getMessage());
             safeClose(socket);
         }
     }
 
-    private void handleFileList(DataInputStream dis) throws Exception {
-        int  totalFiles = dis.readInt();
-        long totalBytes = dis.readLong();
+    /** Receives the file manifest from sender and ACKs it. */
+    private void handleFileList(Socket socket, DataInputStream dis) throws Exception {
+        int  totalFiles  = dis.readInt();
+        long totalBytes  = dis.readLong();
+
         for (int i = 0; i < totalFiles; i++) {
             String name = dis.readUTF();
             long   size = dis.readLong();
@@ -324,32 +328,46 @@ public class TransferEngine {
                     System.currentTimeMillis(), 0);
             rxHistoryIds.put(name, hid);
         }
-        // Notify UI: file list known, totalFiles incoming
-        uiHandler.obtainMessage(MSG_FILE_START, 0, totalFiles, "").sendToTarget();
-    }
 
-    private void handleChunk(Socket socket, DataInputStream dis) throws Exception {
-        String fileName  = dis.readUTF();
-        long   fileSize  = dis.readLong();
-        long   offset    = dis.readLong();
-        long   length    = dis.readLong();
-        int    threadIdx = dis.readInt();
-        int    fileIndex = dis.readInt();
-        int    numThreads= dis.readInt();
-
-        // ACK
+        // ACK the manifest so sender starts sending
         DataOutputStream dos = new DataOutputStream(socket.getOutputStream());
         dos.writeByte(CMD_ACK);
         dos.flush();
+        safeClose(socket);
 
-        rxTotalMap.putIfAbsent(fileName, fileSize);
-        rxBytesMap.putIfAbsent(fileName, new AtomicLong(0));
-        rxDoneMap.putIfAbsent(fileName, new AtomicBoolean(false));
+        uiHandler.obtainMessage(MSG_FILE_START, 0, totalFiles, "").sendToTarget();
+    }
 
-        String outPath = FileUtils.getReceiveDir() + File.separator + fileName;
-        File   outFile = new File(outPath);
+    /** Receives one chunk from sender, writes it at the correct offset. */
+    private void handleChunk(Socket socket, DataInputStream dis) {
+        String outPath = null;
+        String fileName = null;
+        try {
+            fileName  = dis.readUTF();
+            long fileSize   = dis.readLong();
+            long offset     = dis.readLong();
+            long length     = dis.readLong();
+            int  threadIdx  = dis.readInt();
+            int  fileIndex  = dis.readInt();
+            int  numThreads = dis.readInt();
 
-        if (threadIdx == 0) {
+            // ACK immediately so sender can start streaming
+            DataOutputStream dos = new DataOutputStream(socket.getOutputStream());
+            dos.writeByte(CMD_ACK);
+            dos.flush();
+
+            // Populate maps in case filelist arrived after first chunk
+            rxTotalMap.putIfAbsent(fileName, fileSize);
+            rxBytesMap.putIfAbsent(fileName, new AtomicLong(0));
+            rxDoneMap.putIfAbsent(fileName, new AtomicBoolean(false));
+            rxThreadsMap.putIfAbsent(fileName, numThreads);
+            rxThreadsDone.putIfAbsent(fileName, new AtomicInteger(0));
+
+            outPath = FileUtils.getReceiveDir() + File.separator + fileName;
+            File outFile = new File(outPath);
+
+            // Pre-allocate file — only one thread should do this (use CAS on done flag)
+            // We use a dedicated lock object per filename
             synchronized (outPath.intern()) {
                 if (!outFile.exists()) {
                     try (RandomAccessFile raf = new RandomAccessFile(outFile, "rw")) {
@@ -358,83 +376,106 @@ public class TransferEngine {
                     rxHistoryIds.putIfAbsent(fileName,
                             db.insertHistory(fileName, fileSize, 0, "receiving",
                                     System.currentTimeMillis(), 0));
+                    Log.d(TAG, "Pre-allocated " + fileName + " (" + fileSize + " bytes)");
                 }
             }
-        } else {
-            // Wait for file pre-allocation by thread 0
-            int wait = 0;
-            while (!outFile.exists() && wait++ < 30 && !isCancelled) {
-                Thread.sleep(100);
+
+            // Read the full chunk — must loop because dis.read() can return partial
+            try (RandomAccessFile raf = new RandomAccessFile(outFile, "rw")) {
+                raf.seek(offset);
+                byte[] buf       = new byte[BUFFER_SIZE];
+                long   remaining = length;
+                while (remaining > 0 && !isCancelled) {
+                    while (isPaused && !isCancelled) sleep(100);
+
+                    // CRITICAL: readFully equivalent — keeps looping until we get all bytes
+                    int toRead = (int) Math.min(buf.length, remaining);
+                    int read   = 0;
+                    while (read < toRead) {
+                        int r = dis.read(buf, read, toRead - read);
+                        if (r < 0) break;
+                        read += r;
+                    }
+                    if (read <= 0) break;
+
+                    raf.write(buf, 0, read);
+                    remaining -= read;
+
+                    AtomicLong counter = rxBytesMap.get(fileName);
+                    long totalRx = (counter != null) ? counter.addAndGet(read) : read;
+                    speedCalc.update(totalRx);
+
+                    Long total = rxTotalMap.get(fileName);
+                    int pct = (total != null && total > 0)
+                            ? (int)((totalRx * 100L) / total) : 0;
+
+                    uiHandler.obtainMessage(MSG_RX_PROGRESS, pct, fileIndex, fileName).sendToTarget();
+                    uiHandler.obtainMessage(MSG_SPEED, speedCalc.getSpeedFormatted()).sendToTarget();
+
+                    android.os.Message mb = uiHandler.obtainMessage(MSG_BYTES);
+                    mb.obj = new long[]{totalRx, total != null ? total : fileSize, 0, 0};
+                    mb.sendToTarget();
+
+                    Long hid = rxHistoryIds.get(fileName);
+                    if (hid != null) db.updateProgress(hid, totalRx, "receiving");
+                }
             }
+
+            // Mark this chunk thread done; fire file-done when all threads finished
+            AtomicInteger doneThreads = rxThreadsDone.get(fileName);
+            Integer expectedThreads   = rxThreadsMap.get(fileName);
+            if (doneThreads != null && expectedThreads != null) {
+                int nowDone = doneThreads.incrementAndGet();
+                if (nowDone >= expectedThreads) {
+                    AtomicBoolean fileDoneFlag = rxDoneMap.get(fileName);
+                    if (fileDoneFlag != null && fileDoneFlag.compareAndSet(false, true)) {
+                        Long total = rxTotalMap.get(fileName);
+                        Long hid   = rxHistoryIds.get(fileName);
+                        if (hid != null) db.updateProgress(hid, total != null ? total : 0, "done");
+
+                        uiHandler.obtainMessage(MSG_FILE_DONE, fileName).sendToTarget();
+                        Log.d(TAG, "File complete: " + fileName);
+
+                        // Check if all files across the session are done
+                        checkAllFilesDone();
+                    }
+                }
+            }
+
+        } catch (Exception e) {
+            if (!isCancelled) {
+                Log.e(TAG, "handleChunk [" + fileName + "]: " + e.getMessage());
+                uiHandler.obtainMessage(MSG_ERROR, "Receive error: " + e.getMessage()).sendToTarget();
+            }
+        } finally {
+            safeClose(socket);
         }
+    }
 
-        try (RandomAccessFile raf = new RandomAccessFile(outFile, "rw")) {
-            raf.seek(offset);
-            byte[] buf       = new byte[BUFFER_SIZE];
-            long   remaining = length;
-            while (remaining > 0 && !isCancelled) {
-                while (isPaused && !isCancelled) Thread.sleep(100);
-                int read = dis.read(buf, 0, (int) Math.min(buf.length, remaining));
-                if (read < 0) break;
-                raf.write(buf, 0, read);
-                remaining -= read;
-
-                AtomicLong counter = rxBytesMap.get(fileName);
-                long totalReceived = (counter != null) ? counter.addAndGet(read) : read;
-                speedCalc.update(totalReceived);
-
-                Long total = rxTotalMap.get(fileName);
-                int pct = (total != null && total > 0)
-                        ? (int)((totalReceived * 100L) / total) : 0;
-
-                uiHandler.obtainMessage(MSG_RX_PROGRESS, pct, fileIndex, fileName)
-                        .sendToTarget();
-                uiHandler.obtainMessage(MSG_SPEED, speedCalc.getSpeedFormatted())
-                        .sendToTarget();
-
-                // Send raw byte counts for accurate display
-                android.os.Message mBytes = uiHandler.obtainMessage(MSG_BYTES);
-                mBytes.obj = new long[]{totalReceived, total != null ? total : fileSize, 0, 0};
-                mBytes.sendToTarget();
-
-                Long hid = rxHistoryIds.get(fileName);
-                if (hid != null) db.updateProgress(hid, totalReceived, "receiving");
-            }
+    private void checkAllFilesDone() {
+        if (rxDoneMap.isEmpty()) return;
+        for (AtomicBoolean b : rxDoneMap.values()) {
+            if (!b.get()) return;
         }
-
-        // Mark done if all bytes received
-        AtomicLong counter = rxBytesMap.get(fileName);
-        Long total = rxTotalMap.get(fileName);
-        AtomicBoolean doneMark = rxDoneMap.get(fileName);
-        if (counter != null && total != null && counter.get() >= total
-                && doneMark != null && doneMark.compareAndSet(false, true)) {
-            Long hid = rxHistoryIds.get(fileName);
-            if (hid != null) db.updateProgress(hid, total, "done");
-            uiHandler.obtainMessage(MSG_FILE_DONE, fileName).sendToTarget();
-
-            // Check if all files done
-            boolean allDone = true;
-            for (AtomicBoolean b : rxDoneMap.values()) {
-                if (!b.get()) { allDone = false; break; }
-            }
-            if (allDone) {
-                long totalRx = 0;
-                for (Long sz : rxTotalMap.values()) totalRx += sz;
-                String summary = rxDoneMap.size() + " file(s) · " + FileUtils.formatSize(totalRx);
-                uiHandler.obtainMessage(MSG_DONE, summary).sendToTarget();
-            }
-        }
+        long totalRx = 0;
+        for (Long sz : rxTotalMap.values()) if (sz != null) totalRx += sz;
+        String summary = rxDoneMap.size() + " file(s) · " + FileUtils.formatSize(totalRx);
+        uiHandler.obtainMessage(MSG_DONE, summary).sendToTarget();
     }
 
     public void stopReceiving() {
         isCancelled = true;
+        closeServerSockets();
         if (pool != null) pool.shutdownNow();
     }
 
-    // ─── Helpers ─────────────────────────────────────────────────────────────
+    // ═══════════════════════════════════════════════════════════════════════════
+    //  Helpers
+    // ═══════════════════════════════════════════════════════════════════════════
 
     private Socket newSocket(String ip, int port) throws IOException {
-        Socket s = new Socket(ip, port);
+        Socket s = new Socket();
+        s.connect(new java.net.InetSocketAddress(ip, port), CONNECT_TIMEOUT);
         tuneSocket(s);
         return s;
     }
@@ -445,10 +486,11 @@ public class TransferEngine {
             try { return newSocket(ip, port); }
             catch (IOException e) {
                 last = e;
-                try { Thread.sleep(CONNECT_RETRY_MS); } catch (InterruptedException ie) { break; }
+                Log.w(TAG, "Connect to " + ip + ":" + port + " attempt " + i + " failed");
+                sleep(CONNECT_RETRY_MS);
             }
         }
-        throw last != null ? last : new IOException("Connect failed: " + ip + ":" + port);
+        throw last != null ? last : new IOException("All retries failed: " + ip + ":" + port);
     }
 
     private void tuneSocket(Socket s) {
@@ -456,12 +498,22 @@ public class TransferEngine {
             s.setTcpNoDelay(true);
             s.setSendBufferSize(SOCKET_BUF);
             s.setReceiveBufferSize(SOCKET_BUF);
-            s.setPerformancePreferences(0, 0, 1);
         } catch (Exception ignored) {}
     }
 
     private void safeClose(Socket s) {
         if (s != null) try { s.close(); } catch (IOException ignored) {}
+    }
+
+    private void closeServerSockets() {
+        for (ServerSocket ss : serverSockets) {
+            try { ss.close(); } catch (IOException ignored) {}
+        }
+        serverSockets.clear();
+    }
+
+    private void sleep(long ms) {
+        try { Thread.sleep(ms); } catch (InterruptedException e) { Thread.currentThread().interrupt(); }
     }
 
     private String formatDuration(long ms) {

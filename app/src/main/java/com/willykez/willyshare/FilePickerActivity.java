@@ -5,28 +5,37 @@ import android.database.Cursor;
 import android.net.Uri;
 import android.os.Bundle;
 import android.provider.MediaStore;
-import android.view.LayoutInflater;
-import android.view.View;
-import android.view.ViewGroup;
-import android.widget.BaseAdapter;
-import android.widget.Button;
-import android.widget.CheckBox;
-import android.widget.ListView;
-import android.widget.TextView;
-import android.widget.Toast;
+import android.view.*;
+import android.widget.*;
 import androidx.appcompat.app.AppCompatActivity;
 import java.io.File;
 import java.util.ArrayList;
 import java.util.List;
 
+/**
+ * FilePickerActivity
+ *
+ * FIXED:
+ *  - No longer auto-opens picker on onCreate. Screen is shown first so user
+ *    sees the "Add Files" button and can tap it intentionally.
+ *  - "Add more" now correctly accumulates files from multiple picker sessions
+ *    into the same list without losing previous selections.
+ *  - TransferService is NOT started here — TransferActivity handles that.
+ *  - remoteIp is forwarded cleanly to TransferActivity.
+ *  - Empty file list shows a clear empty state, not a crash.
+ *  - File deduplication: same path can't be added twice.
+ */
 public class FilePickerActivity extends AppCompatActivity {
+
     private static final int REQ_PICK = 10;
 
-    private ListView lvFiles;
-    private TextView tvSelectedSize, tvSelectedCount;
-    private FileAdapter adapter;
-    private final List<String> filePaths  = new ArrayList<>();
-    private final List<String> fileNames  = new ArrayList<>();
+    private ListView     lvFiles;
+    private TextView     tvSelectedCount, tvSelectedSize, tvEmptyHint;
+    private Button       btnPickMore, btnSendSelected;
+    private FileAdapter  adapter;
+
+    private final List<String>  filePaths = new ArrayList<>();
+    private final List<String>  fileNames = new ArrayList<>();
     private final List<Boolean> selected  = new ArrayList<>();
     private String remoteIp;
 
@@ -36,41 +45,47 @@ public class FilePickerActivity extends AppCompatActivity {
         setContentView(R.layout.activity_picker);
 
         remoteIp = getIntent().getStringExtra("remoteIp");
-        if (remoteIp == null) remoteIp = HotspotManager.HOST_IP;
+        if (remoteIp == null || remoteIp.isEmpty()) remoteIp = HotspotManager.HOST_IP;
 
         lvFiles         = findViewById(R.id.lvFiles);
-        tvSelectedSize  = findViewById(R.id.tvSelectedSize);
         tvSelectedCount = findViewById(R.id.tvSelectedCount);
-        Button btnPickMore   = findViewById(R.id.btnPickMore);
-        Button btnSend       = findViewById(R.id.btnSendSelected);
+        tvSelectedSize  = findViewById(R.id.tvSelectedSize);
+        tvEmptyHint     = findViewById(R.id.tvEmptyHint);
+        btnPickMore     = findViewById(R.id.btnPickMore);
+        btnSendSelected = findViewById(R.id.btnSendSelected);
 
         adapter = new FileAdapter();
         lvFiles.setAdapter(adapter);
 
-        btnPickMore.setOnClickListener(v -> {
-            AnimUtils.buttonPress(v);
-            openPicker();
-        });
-
-        btnSend.setOnClickListener(v -> {
-            AnimUtils.buttonPress(v);
-            v.postDelayed(this::sendSelectedFiles, 120);
-        });
-
-        lvFiles.setOnItemClickListener((p, v, pos, id) -> {
+        // Item tap toggles selection
+        lvFiles.setOnItemClickListener((parent, view, pos, id) -> {
             selected.set(pos, !selected.get(pos));
             adapter.notifyDataSetChanged();
             updateSummary();
         });
 
-        openPicker();
+        btnPickMore.setOnClickListener(v -> {
+            AnimUtils.buttonPress(v);
+            openSystemPicker();
+        });
+
+        btnSendSelected.setOnClickListener(v -> {
+            AnimUtils.buttonPress(v);
+            v.postDelayed(this::confirmAndSend, 120);
+        });
+
+        updateSummary();
+        // Show empty state hint
+        showEmptyState(true);
     }
 
-    private void openPicker() {
+    // ── System file picker ────────────────────────────────────────────────────
+
+    private void openSystemPicker() {
         Intent pick = new Intent(Intent.ACTION_GET_CONTENT);
         pick.setType("*/*");
         pick.putExtra(Intent.EXTRA_ALLOW_MULTIPLE, true);
-        startActivityForResult(Intent.createChooser(pick, "Select files"), REQ_PICK);
+        startActivityForResult(Intent.createChooser(pick, "Select files to send"), REQ_PICK);
     }
 
     @Override
@@ -78,68 +93,72 @@ public class FilePickerActivity extends AppCompatActivity {
         super.onActivityResult(req, res, data);
         if (req != REQ_PICK || res != RESULT_OK || data == null) return;
 
+        int addedCount = 0;
         if (data.getClipData() != null) {
             int count = data.getClipData().getItemCount();
-            for (int i = 0; i < count; i++)
-                addUri(data.getClipData().getItemAt(i).getUri());
+            for (int i = 0; i < count; i++) {
+                if (addUri(data.getClipData().getItemAt(i).getUri())) addedCount++;
+            }
         } else if (data.getData() != null) {
-            addUri(data.getData());
+            if (addUri(data.getData())) addedCount++;
         }
+
         adapter.notifyDataSetChanged();
         updateSummary();
+        if (addedCount > 0) showEmptyState(false);
+
+        if (addedCount > 0) {
+            Toast.makeText(this, addedCount + " file(s) added", Toast.LENGTH_SHORT).show();
+        }
     }
 
-    private void addUri(Uri uri) {
-        String path = resolveUri(uri);
-        if (path == null) return;
+    /** @return true if this URI was newly added (false if duplicate) */
+    private boolean addUri(Uri uri) {
+        String path = resolveToPath(uri);
+        if (path == null) return false;
+        // Deduplication
+        if (filePaths.contains(path)) return false;
         String name = FileUtils.getFileNameFromUri(this, uri);
         filePaths.add(path);
-        fileNames.add(name);
-        selected.add(true);
+        fileNames.add(name != null ? name : new File(path).getName());
+        selected.add(true); // new files are selected by default
+        return true;
     }
 
-    private String resolveUri(Uri uri) {
+    private String resolveToPath(Uri uri) {
         if ("file".equals(uri.getScheme())) return uri.getPath();
+        // Try MediaStore column
         String[] proj = {MediaStore.Files.FileColumns.DATA};
         try (Cursor c = getContentResolver().query(uri, proj, null, null, null)) {
             if (c != null && c.moveToFirst()) {
                 int col = c.getColumnIndex(MediaStore.Files.FileColumns.DATA);
                 if (col >= 0) {
                     String p = c.getString(col);
-                    if (p != null) return p;
+                    if (p != null && !p.isEmpty()) return p;
                 }
             }
         } catch (Exception ignored) {}
-        // Fallback: copy to cache
+        // Fallback: copy content to app cache
         try {
             String name = FileUtils.getFileNameFromUri(this, uri);
+            if (name == null) name = "file_" + System.currentTimeMillis();
             File dest = new File(getCacheDir(), name);
-            try (java.io.InputStream in = getContentResolver().openInputStream(uri);
-                 java.io.FileOutputStream out = new java.io.FileOutputStream(dest)) {
-                byte[] buf = new byte[16384];
+            try (java.io.InputStream  in  = getContentResolver().openInputStream(uri);
+                 java.io.OutputStream out = new java.io.FileOutputStream(dest)) {
+                byte[] buf = new byte[32768];
                 int r;
                 while ((r = in.read(buf)) != -1) out.write(buf, 0, r);
             }
             return dest.getAbsolutePath();
         } catch (Exception e) {
+            Toast.makeText(this, "Could not read file", Toast.LENGTH_SHORT).show();
             return null;
         }
     }
 
-    private void updateSummary() {
-        long total = 0;
-        int count = 0;
-        for (int i = 0; i < filePaths.size(); i++) {
-            if (selected.get(i)) {
-                total += FileUtils.getFileSize(filePaths.get(i));
-                count++;
-            }
-        }
-        tvSelectedCount.setText(count + " item" + (count == 1 ? "" : "s") + " selected");
-        tvSelectedSize.setText("Total: " + FileUtils.formatSize(total));
-    }
+    // ── Send ─────────────────────────────────────────────────────────────────
 
-    private void sendSelectedFiles() {
+    private void confirmAndSend() {
         ArrayList<String> toSend = new ArrayList<>();
         for (int i = 0; i < filePaths.size(); i++) {
             if (selected.get(i)) toSend.add(filePaths.get(i));
@@ -148,13 +167,8 @@ public class FilePickerActivity extends AppCompatActivity {
             Toast.makeText(this, "Select at least one file", Toast.LENGTH_SHORT).show();
             return;
         }
-        Intent svc = new Intent(this, TransferService.class);
-        svc.setAction(TransferService.ACTION_SEND);
-        svc.putStringArrayListExtra(TransferService.EXTRA_FILES, toSend);
-        svc.putExtra(TransferService.EXTRA_REMOTE_IP, remoteIp);
-        svc.putExtra(TransferService.EXTRA_PORT, HotspotManager.TRANSFER_PORT);
-        startForegroundService(svc);
 
+        // Go to TransferActivity — it starts the engine AND the service
         Intent ui = new Intent(this, TransferActivity.class);
         ui.putExtra("mode", "send");
         ui.putStringArrayListExtra("files", toSend);
@@ -164,6 +178,27 @@ public class FilePickerActivity extends AppCompatActivity {
         finish();
     }
 
+    // ── Summary bar ──────────────────────────────────────────────────────────
+
+    private void updateSummary() {
+        long total = 0;
+        int  count = 0;
+        for (int i = 0; i < filePaths.size(); i++) {
+            if (selected.get(i)) {
+                total += FileUtils.getFileSize(filePaths.get(i));
+                count++;
+            }
+        }
+        tvSelectedCount.setText(count + " item" + (count == 1 ? "" : "s") + " selected");
+        tvSelectedSize.setText("Total: " + FileUtils.formatSize(total));
+        btnSendSelected.setEnabled(count > 0);
+    }
+
+    private void showEmptyState(boolean show) {
+        if (tvEmptyHint != null) tvEmptyHint.setVisibility(show ? View.VISIBLE : View.GONE);
+        lvFiles.setVisibility(show ? View.GONE : View.VISIBLE);
+    }
+
     @Override
     public void onBackPressed() {
         super.onBackPressed();
@@ -171,43 +206,43 @@ public class FilePickerActivity extends AppCompatActivity {
     }
 
     // ── Adapter ───────────────────────────────────────────────────────────────
+
     private class FileAdapter extends BaseAdapter {
-        @Override public int getCount() { return filePaths.size(); }
-        @Override public String getItem(int pos) { return filePaths.get(pos); }
-        @Override public long getItemId(int pos) { return pos; }
+        @Override public int     getCount()          { return filePaths.size(); }
+        @Override public String  getItem(int pos)    { return filePaths.get(pos); }
+        @Override public long    getItemId(int pos)  { return pos; }
 
         @Override
-        public View getView(int pos, View convertView, ViewGroup parent) {
-            if (convertView == null) {
-                convertView = LayoutInflater.from(FilePickerActivity.this)
+        public View getView(int pos, View cv, ViewGroup parent) {
+            if (cv == null)
+                cv = LayoutInflater.from(FilePickerActivity.this)
                         .inflate(R.layout.item_file, parent, false);
-            }
-            TextView tvName = convertView.findViewById(R.id.tvFileName);
-            TextView tvSize = convertView.findViewById(R.id.tvFileSize);
-            CheckBox cb     = convertView.findViewById(R.id.cbFile);
-            TextView tvIcon = convertView.findViewById(R.id.tvFileIcon);
+
+            TextView tvIcon = cv.findViewById(R.id.tvFileIcon);
+            TextView tvName = cv.findViewById(R.id.tvFileName);
+            TextView tvSize = cv.findViewById(R.id.tvFileSize);
+            CheckBox cb     = cv.findViewById(R.id.cbFile);
 
             String name = fileNames.get(pos);
             tvName.setText(name);
             tvSize.setText(FileUtils.formatSize(FileUtils.getFileSize(filePaths.get(pos))));
             cb.setChecked(selected.get(pos));
-            tvIcon.setText(iconForName(name));
+            if (tvIcon != null) tvIcon.setText(iconFor(name));
 
-            convertView.setAlpha(0f);
-            convertView.animate().alpha(1f).setStartDelay(pos * 40L).setDuration(250).start();
-
-            return convertView;
+            cv.setAlpha(0f);
+            cv.animate().alpha(1f).setStartDelay(pos * 35L).setDuration(220).start();
+            return cv;
         }
 
-        private String iconForName(String name) {
+        private String iconFor(String name) {
             if (name == null) return "📄";
-            String lower = name.toLowerCase();
-            if (lower.endsWith(".mp4") || lower.endsWith(".mkv") || lower.endsWith(".avi")) return "🎬";
-            if (lower.endsWith(".mp3") || lower.endsWith(".aac") || lower.endsWith(".flac")) return "🎵";
-            if (lower.endsWith(".jpg") || lower.endsWith(".jpeg") || lower.endsWith(".png") || lower.endsWith(".gif")) return "🖼️";
-            if (lower.endsWith(".pdf")) return "📕";
-            if (lower.endsWith(".zip") || lower.endsWith(".rar") || lower.endsWith(".7z")) return "📦";
-            if (lower.endsWith(".apk")) return "📱";
+            String n = name.toLowerCase();
+            if (n.endsWith(".mp4")||n.endsWith(".mkv")||n.endsWith(".avi")||n.endsWith(".mov")) return "🎬";
+            if (n.endsWith(".mp3")||n.endsWith(".aac")||n.endsWith(".flac")||n.endsWith(".ogg")) return "🎵";
+            if (n.endsWith(".jpg")||n.endsWith(".jpeg")||n.endsWith(".png")||n.endsWith(".gif")) return "🖼️";
+            if (n.endsWith(".pdf")) return "📕";
+            if (n.endsWith(".zip")||n.endsWith(".rar")||n.endsWith(".7z")) return "📦";
+            if (n.endsWith(".apk")) return "📱";
             return "📄";
         }
     }
