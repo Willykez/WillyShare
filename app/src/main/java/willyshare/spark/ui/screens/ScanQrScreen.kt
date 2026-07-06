@@ -57,6 +57,8 @@ import com.google.zxing.MultiFormatReader
 import com.google.zxing.NotFoundException
 import com.google.zxing.PlanarYUVLuminanceSource
 import com.google.zxing.common.HybridBinarizer
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Check
 
 @OptIn(ExperimentalPermissionsApi::class)
 @Composable
@@ -128,7 +130,11 @@ fun ScanQrScreen(
                                 contentAlignment = Alignment.Center
                             ) {
                                 Icon(
-                                    androidx.compose.material.icons.Icons.Default.Check,
+    imageVector = Icons.Default.Check,
+    contentDescription = null,
+    tint = Color(0xFF2E7D32),
+    modifier = Modifier.size(36.dp)
+)
                                     contentDescription = null,
                                     tint = Color(0xFF2E7D32),
                                     modifier = Modifier.size(36.dp)
