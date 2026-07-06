@@ -1,0 +1,6 @@
+{
+  "name": "Sparks",
+  "description": "Blazing fast file sharing application with offline Room persistence and sleek M3 design.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

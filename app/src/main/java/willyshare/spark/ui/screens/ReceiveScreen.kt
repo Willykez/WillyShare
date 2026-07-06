@@ -1,0 +1,238 @@
+package willyshare.spark.ui.screens
+
+import android.Manifest
+import android.os.Build
+import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.QrCode2
+import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.Icon
+import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Text
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
+import androidx.compose.foundation.layout.Row
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import willyshare.spark.ui.AuroraBackground
+import willyshare.spark.ui.FileProgressRow
+import willyshare.spark.ui.GlassCard
+import willyshare.spark.ui.PulseViewModel
+import willyshare.spark.ui.RadarPulseRing
+import willyshare.spark.ui.InPageHeader
+import willyshare.spark.ui.SleekFloatingPillButton
+import willyshare.spark.ui.formatBytes
+import willyshare.spark.ui.theme.CyanBright
+import willyshare.spark.ui.theme.SleekOnSurface
+import willyshare.spark.ui.theme.SleekOnSurfaceVariant
+import willyshare.spark.ui.theme.SleekOutline
+import willyshare.spark.ui.theme.SleekPrimary
+import willyshare.spark.ui.theme.SleekPrimaryContainer
+import willyshare.spark.ui.theme.VioletAccent
+import com.google.accompanist.permissions.ExperimentalPermissionsApi
+import com.google.accompanist.permissions.isGranted
+import com.google.accompanist.permissions.rememberMultiplePermissionsState
+import com.google.accompanist.permissions.shouldShowRationale
+
+@OptIn(ExperimentalPermissionsApi::class)
+@Composable
+fun ReceiveScreen(viewModel: PulseViewModel, onNavigate: (String) -> Unit) {
+    val requiredPermissions = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+        listOf(Manifest.permission.NEARBY_WIFI_DEVICES, Manifest.permission.ACCESS_FINE_LOCATION, Manifest.permission.POST_NOTIFICATIONS)
+    } else listOf(Manifest.permission.ACCESS_FINE_LOCATION)
+    val permissionsState = rememberMultiplePermissionsState(requiredPermissions)
+
+    val isListening by viewModel.isListening.collectAsState()
+    val senderConnected by viewModel.senderConnected.collectAsState()
+    val connectedDeviceName by viewModel.connectedDeviceName.collectAsState()
+    val progress by viewModel.receiveProgress.collectAsState()
+    val deviceName by viewModel.thisDeviceName.collectAsState()
+
+    LaunchedEffect(Unit) {
+        if (!permissionsState.allPermissionsGranted) permissionsState.launchMultiplePermissionRequest()
+        viewModel.refreshMyQrPayload()
+        viewModel.startReceiving()
+    }
+    LaunchedEffect(permissionsState.allPermissionsGranted) {
+        if (permissionsState.allPermissionsGranted) viewModel.startPeerDiscovery()
+    }
+    DisposableEffect(Unit) {
+        onDispose { viewModel.stopReceiving(); viewModel.stopPeerDiscovery() }
+    }
+
+    Scaffold(
+        containerColor = Color.Transparent
+    ) { innerPadding ->
+        AuroraBackground(modifier = Modifier.fillMaxSize().padding(innerPadding)) {
+            Box(modifier = Modifier.fillMaxSize()) {
+                Column(modifier = Modifier.fillMaxSize()) {
+                    InPageHeader(
+                        title = "Receive",
+                        subtitle = when {
+                            !permissionsState.allPermissionsGranted -> "Permission needed"
+                            senderConnected -> "Connected to ${connectedDeviceName ?: "a nearby device"}"
+                            isListening -> "Visible as \u201C$deviceName\u201D"
+                            else -> "Starting listener\u2026"
+                        },
+                        showBack = true,
+                        onBack = { onNavigate("dashboard") }
+                    )
+                    Column(
+                        modifier = Modifier.fillMaxSize().padding(horizontal = 24.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally
+                    ) {
+                        if (!permissionsState.allPermissionsGranted) {
+                            Spacer(modifier = Modifier.height(60.dp))
+                            Icon(willyshare.spark.ui.PulseIcons.TargetPin, contentDescription = null, tint = SleekPrimary, modifier = Modifier.size(40.dp))
+                            Spacer(modifier = Modifier.height(12.dp))
+                            Text("Nearby device permission needed", fontSize = 16.sp, fontWeight = FontWeight.Bold, color = SleekOnSurface)
+                            Spacer(modifier = Modifier.height(6.dp))
+                            Text(
+                                "Pulse needs this permission so nearby senders can find and connect to this device.",
+                                fontSize = 13.sp, color = SleekOnSurfaceVariant, textAlign = TextAlign.Center
+                            )
+                            Spacer(modifier = Modifier.height(16.dp))
+                            Button(
+                                onClick = { permissionsState.launchMultiplePermissionRequest() },
+                                shape = RoundedCornerShape(999.dp),
+                                colors = ButtonDefaults.buttonColors(containerColor = SleekPrimary)
+                            ) {
+                                Text(
+                                    if (permissionsState.permissions.any { it.status.shouldShowRationale }) "Grant permission" else "Allow",
+                                    color = Color.White, fontWeight = FontWeight.Bold
+                                )
+                            }
+                            return@Column
+                        }
+
+                        Spacer(modifier = Modifier.height(20.dp))
+                        val outlineColor = SleekOutline
+                        val primaryColor = SleekPrimary
+                        val fraction = if (progress.overallTotal > 0) (progress.overallBytes.toFloat() / progress.overallTotal.toFloat()).coerceIn(0f, 1f) else 0f
+
+                        Box(modifier = Modifier.size(200.dp), contentAlignment = Alignment.Center) {
+                            if (!senderConnected) {
+                                RadarPulseRing(200, 0); RadarPulseRing(150, 700); RadarPulseRing(100, 1400)
+                                Box(
+                                    modifier = Modifier
+                                        .size(96.dp)
+                                        .clip(CircleShape)
+                                        .background(SleekPrimaryContainer)
+                                        .border(2.dp, SleekPrimary, CircleShape),
+                                    contentAlignment = Alignment.Center
+                                ) { Icon(willyshare.spark.ui.PulseIcons.SignalBars, contentDescription = null, tint = SleekPrimary, modifier = Modifier.size(42.dp)) }
+                            } else {
+                                Canvas(modifier = Modifier.size(180.dp)) {
+                                    drawCircle(color = outlineColor.copy(alpha = 0.25f), style = Stroke(width = 14.dp.toPx()))
+                                    drawArc(
+                                        brush = Brush.sweepGradient(listOf(VioletAccent, primaryColor, CyanBright, VioletAccent)),
+                                        startAngle = -90f, sweepAngle = fraction * 360f, useCenter = false,
+                                        style = Stroke(width = 14.dp.toPx(), cap = StrokeCap.Round)
+                                    )
+                                }
+                                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                    Text("${(fraction * 100).toInt()}%", fontSize = 34.sp, fontWeight = FontWeight.ExtraBold, color = SleekPrimary)
+                                    Text("${formatBytes(progress.overallSpeed.toLong())}/s", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = SleekOnSurfaceVariant)
+                                }
+                            }
+                        }
+
+                        Spacer(modifier = Modifier.height(16.dp))
+                        if (senderConnected) {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                modifier = Modifier
+                                    .clip(RoundedCornerShape(999.dp))
+                                    .background(Color(0xFF2E7D32).copy(alpha = 0.14f))
+                                    .border(1.dp, Color(0xFF2E7D32).copy(alpha = 0.4f), RoundedCornerShape(999.dp))
+                                    .padding(horizontal = 14.dp, vertical = 6.dp)
+                            ) {
+                                Box(modifier = Modifier.size(8.dp).clip(CircleShape).background(Color(0xFF2E7D32)))
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Text(
+                                    "Connected \u2022 ${connectedDeviceName ?: "Nearby device"}",
+                                    fontSize = 12.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = Color(0xFF2E7D32)
+                                )
+                            }
+                            Spacer(modifier = Modifier.height(10.dp))
+                        }
+                        Text(
+                            text = if (senderConnected) (if (progress.isComplete) "Transfer complete" else "Receiving\u2026") else "Waiting to receive",
+                            fontSize = 20.sp, fontWeight = FontWeight.Bold, color = SleekOnSurface
+                        )
+                        Spacer(modifier = Modifier.height(6.dp))
+                        if (!senderConnected) {
+                            Text(
+                                "Ask the sender to pick \u201C$deviceName\u201D from their Send screen,\nor scan your QR code.",
+                                fontSize = 13.sp, color = SleekOnSurfaceVariant, textAlign = TextAlign.Center
+                            )
+                        }
+
+                        progress.error?.let {
+                            Spacer(modifier = Modifier.height(10.dp))
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Icon(willyshare.spark.ui.PulseIcons.Warning, contentDescription = null, tint = Color(0xFFD32F2F), modifier = Modifier.size(14.dp))
+                                Spacer(modifier = Modifier.width(4.dp))
+                                Text(it, fontSize = 12.sp, color = Color(0xFFD32F2F))
+                            }
+                        }
+
+                        if (progress.files.isNotEmpty()) {
+                            Spacer(modifier = Modifier.height(16.dp))
+                            GlassCard(modifier = Modifier.fillMaxWidth().weight(1f, fill = false)) {
+                                Text("Files", fontSize = 13.sp, fontWeight = FontWeight.Bold, color = SleekOnSurface)
+                                Spacer(modifier = Modifier.height(8.dp))
+                                LazyColumn(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                                    items(progress.files, key = { it.key }) { item -> FileProgressRow(item) }
+                                }
+                            }
+                        }
+                        Spacer(modifier = Modifier.height(if (!senderConnected) 90.dp else 20.dp))
+                    }
+                }
+
+                if (!senderConnected && permissionsState.allPermissionsGranted) {
+                    SleekFloatingPillButton(
+                        text = "Show my QR",
+                        icon = Icons.Default.QrCode2,
+                        onClick = { onNavigate("my_qr") },
+                        modifier = Modifier
+                            .align(Alignment.BottomCenter)
+                            .padding(bottom = 24.dp)
+                    )
+                }
+            }
+        }
+    }
+}

@@ -1,0 +1,119 @@
+name: Sparks CI — Build APK
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+  workflow_dispatch:
+
+# Cancel any in-progress run on the same branch so we never queue redundant builds.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  JAVA_VERSION: '21'          # AGP 9.x requires JDK 21
+  GRADLE_VERSION: '9.3.1'     # AGP 9.1.1 minimum required Gradle version
+
+jobs:
+  # ───────────────────────────────────────────────────────────────────────────
+  # Debug APK — runs on every push and PR
+  # ───────────────────────────────────────────────────────────────────────────
+  build-debug:
+    name: Debug APK
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up JDK
+        uses: actions/setup-java@v4
+        with:
+          java-version: ${{ env.JAVA_VERSION }}
+          distribution: 'temurin'
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: ${{ env.GRADLE_VERSION }}
+          cache-read-only: false
+
+      # google-services plugin runs with MissingGoogleServicesStrategy.WARN, so no
+      # google-services.json stub is needed here — the build proceeds with a warning.
+
+      - name: Create debug keystore
+        run: |
+          keytool -genkeypair -v \
+            -keystore debug.keystore \
+            -alias androiddebugkey \
+            -keypass android \
+            -storepass android \
+            -dname "CN=Android Debug,O=Android,C=US" \
+            -validity 10000 \
+            -keyalg RSA -keysize 2048
+
+      - name: Build debug APK
+        run: gradle assembleDebug --no-daemon --no-configuration-cache --stacktrace
+
+      - name: Upload debug APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: Sparks-debug-${{ github.run_number }}
+          path: app/build/outputs/apk/debug/*.apk
+          retention-days: 14
+          if-no-files-found: error
+
+  # ───────────────────────────────────────────────────────────────────────────
+  # Signed release APK — only on push to main, and only if a keystore is configured
+  # ───────────────────────────────────────────────────────────────────────────
+  build-release:
+    name: Release APK
+    runs-on: ubuntu-latest
+    needs: build-debug
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main' && vars.HAS_KEYSTORE == 'true'
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up JDK
+        uses: actions/setup-java@v4
+        with:
+          java-version: ${{ env.JAVA_VERSION }}
+          distribution: 'temurin'
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: ${{ env.GRADLE_VERSION }}
+          cache-read-only: true
+
+      # ── Decode release keystore from secret ─────────────────────────────────
+      # To enable this job:
+      #   1. Settings → Secrets and variables → Actions → New repository secret:
+      #        KEYSTORE_B64    — base64 of your .jks file (base64 -w0 my-upload-key.jks)
+      #        STORE_PASSWORD  — keystore password
+      #        KEY_PASSWORD    — key password
+      #   2. Settings → Secrets and variables → Actions → Variables tab:
+      #        HAS_KEYSTORE = true
+      - name: Decode release keystore
+        env:
+          KEYSTORE_B64: ${{ secrets.KEYSTORE_B64 }}
+        run: echo "$KEYSTORE_B64" | base64 --decode > my-upload-key.jks
+
+      - name: Build release APK
+        env:
+          STORE_PASSWORD: ${{ secrets.STORE_PASSWORD }}
+          KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
+        run: gradle assembleRelease --no-daemon --no-configuration-cache --stacktrace
+
+      - name: Upload release APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: Sparks-release-${{ github.run_number }}
+          path: app/build/outputs/apk/release/*.apk
+          retention-days: 30
+          if-no-files-found: error
+          
