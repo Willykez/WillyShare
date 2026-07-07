@@ -97,13 +97,18 @@ jobs:
       #        STORE_PASSWORD  — keystore password
       #        KEY_PASSWORD    — key password
       #   2. Settings → Secrets and variables → Actions → Variables tab:
-      #        HAS_KEYSTORE = true
-      - name: Decode release keystore
-        env:
-          KEYSTORE_B64: ${{ secrets.KEYSTORE_B64 }}
-        run: echo "$KEYSTORE_B64" | base64 --decode > my-upload-key.jks
+      #        HAS_KEYSTORE = true- name: Decode release keystore
+  env:
+    KEYSTORE_B64: ${{ secrets.KEYSTORE_B64 }}
+  run: echo "$KEYSTORE_B64" | base64 --decode > my-upload-key.jks
 
-      - name: Build release APK
+  - name: Verify keystore
+  run: |
+    keytool -list \
+    -keystore my-upload-key.jks \
+    -storepass "${{ secrets.STORE_PASSWORD }}"
+ 
+  - name: Build release APK
         env:
           STORE_PASSWORD: ${{ secrets.STORE_PASSWORD }}
           KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
