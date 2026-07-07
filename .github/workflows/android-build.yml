@@ -72,7 +72,7 @@ jobs:
     name: Release APK
     runs-on: ubuntu-latest
     needs: build-debug
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main' && vars.HAS_KEYSTORE == 'true'
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
 
     steps:
       - name: Checkout repository
