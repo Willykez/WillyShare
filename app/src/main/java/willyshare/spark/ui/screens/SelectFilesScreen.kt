@@ -8,6 +8,7 @@ import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -20,13 +21,12 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.LazyRow
-import androidx.compose.foundation.lazy.items as lazyRowItems
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
+import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -61,12 +61,9 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import willyshare.spark.data.FileItemEntity
-import willyshare.spark.ui.PickerSortOption
-import willyshare.spark.ui.PickerViewMode
 import willyshare.spark.ui.PulseViewModel
 import willyshare.spark.ui.InPageHeader
 import willyshare.spark.ui.formatBytes
-import willyshare.spark.ui.sortedByOption
 import willyshare.spark.ui.theme.SleekBg
 import willyshare.spark.ui.theme.SleekCard
 import willyshare.spark.ui.theme.SleekOnSurface
@@ -116,13 +113,23 @@ fun SelectFilesScreen(
         }
     }
 
+    // "List" or "Grid" - remembered per visit to the screen, defaults to Grid (thumbnails first).
+    var isGridView by remember { mutableStateOf(true) }
+    var sortOption by remember { mutableStateOf(SortOption.NAME) }
+    var sortMenuExpanded by remember { mutableStateOf(false) }
+
     val selectedCount = files.count { it.isSelected }
     val totalBytes = files.filter { it.isSelected }.sumOf { it.sizeBytes }
-    val viewMode by viewModel.pickerViewMode.collectAsState()
-    val sortOption by viewModel.pickerSortOption.collectAsState()
-    val filteredFiles = files
-        .filter { it.category.equals(currentTab, ignoreCase = true) }
-        .sortedByOption(sortOption)
+    val categoryFiltered = if (currentTab.equals("All", ignoreCase = true)) {
+        files
+    } else {
+        files.filter { it.category.equals(currentTab, ignoreCase = true) }
+    }
+    val filteredFiles = when (sortOption) {
+        SortOption.NAME -> categoryFiltered.sortedBy { it.name.lowercase() }
+        SortOption.SIZE_LARGEST -> categoryFiltered.sortedByDescending { it.sizeBytes }
+        SortOption.NEWEST -> categoryFiltered.sortedByDescending { it.dateModifiedMs }
+    }
     val sharedFiles by viewModel.pendingSharedFiles.collectAsState()
     val browseSummary by viewModel.browseSelectionSummary.collectAsState()
     val browseCount = browseSummary.first
@@ -185,16 +192,16 @@ fun SelectFilesScreen(
                     showBack = true,
                     onBack = { onNavigate("send") }
                 )
-                LazyRow(
+                Row(
                     modifier = Modifier
                         .fillMaxWidth()
                         .background(SleekSurfaceContainer)
-                        .padding(vertical = 10.dp),
-                    contentPadding = PaddingValues(horizontal = 20.dp),
+                        .horizontalScroll(rememberScrollState())
+                        .padding(horizontal = 20.dp, vertical = 10.dp),
                     horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
-                    val tabs = listOf("Photos", "Videos", "Audio", "Documents", "Apps")
-                    lazyRowItems(tabs, key = { it }) { tab ->
+                    val tabs = listOf("All", "Photos", "Videos", "Audio", "Documents", "Apps")
+                    for (tab in tabs) {
                         val isSelected = tab.equals(currentTab, ignoreCase = true)
                         Box(
                             modifier = Modifier
@@ -209,70 +216,29 @@ fun SelectFilesScreen(
                                 text = tab,
                                 fontSize = 12.sp,
                                 fontWeight = FontWeight.Bold,
-                                color = if (isSelected) Color.White else SleekOnSurfaceVariant,
-                                maxLines = 1,
-                                overflow = TextOverflow.Clip
+                                color = if (isSelected) Color.White else SleekOnSurfaceVariant
                             )
                         }
                     }
-                    item {
-                        Box(
-                            modifier = Modifier
-                                .clip(RoundedCornerShape(999.dp))
-                                .background(SleekCard)
-                                .border(1.dp, SleekOutline.copy(alpha = 0.5f), RoundedCornerShape(999.dp))
-                                .clickable { onNavigate("browse") }
-                                .padding(horizontal = 14.dp, vertical = 8.dp),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                Icon(
-                                    willyshare.spark.ui.PulseIcons.FolderClosed,
-                                    contentDescription = null,
-                                    tint = SleekOnSurfaceVariant,
-                                    modifier = Modifier.size(14.dp)
-                                )
-                                Spacer(modifier = Modifier.width(6.dp))
-                                Text(
-                                    "Browse folders",
-                                    fontSize = 12.sp,
-                                    fontWeight = FontWeight.Bold,
-                                    color = SleekOnSurfaceVariant,
-                                    maxLines = 1,
-                                    overflow = TextOverflow.Clip
-                                )
-                            }
+                    Box(
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(999.dp))
+                            .background(SleekCard)
+                            .border(1.dp, SleekOutline.copy(alpha = 0.5f), RoundedCornerShape(999.dp))
+                            .clickable { onNavigate("browse") }
+                            .padding(horizontal = 14.dp, vertical = 8.dp),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Icon(
+                                willyshare.spark.ui.PulseIcons.FolderClosed,
+                                contentDescription = null,
+                                tint = SleekOnSurfaceVariant,
+                                modifier = Modifier.size(14.dp)
+                            )
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text("Browse folders", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = SleekOnSurfaceVariant)
                         }
-                    }
-                }
-
-                // View-mode (grid/list) + sort controls, with a live result count.
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .background(SleekSurfaceContainer)
-                        .padding(horizontal = 20.dp)
-                        .padding(bottom = 10.dp),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Text(
-                        "${filteredFiles.size} item${if (filteredFiles.size != 1) "s" else ""}",
-                        fontSize = 12.sp,
-                        color = SleekOnSurfaceVariant
-                    )
-                    Row(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
-                        SortMenuButton(
-                            current = sortOption,
-                            onSelect = { viewModel.pickerSortOption.value = it }
-                        )
-                        ViewModeToggle(
-                            mode = viewMode,
-                            onToggle = {
-                                viewModel.pickerViewMode.value =
-                                    if (viewMode == PickerViewMode.GRID) PickerViewMode.LIST else PickerViewMode.GRID
-                            }
-                        )
                     }
                 }
 
@@ -299,6 +265,51 @@ fun SelectFilesScreen(
                     }
                 }
 
+                if (!isLoading && filteredFiles.isNotEmpty()) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 20.dp, vertical = 6.dp),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            "${filteredFiles.size} item${if (filteredFiles.size != 1) "s" else ""}",
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.SemiBold,
+                            color = SleekOnSurfaceVariant
+                        )
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Box {
+                                IconButton(onClick = { sortMenuExpanded = true }, modifier = Modifier.size(32.dp)) {
+                                    Icon(Icons.Default.SwapVert, contentDescription = "Sort", tint = SleekOnSurfaceVariant)
+                                }
+                                DropdownMenu(expanded = sortMenuExpanded, onDismissRequest = { sortMenuExpanded = false }) {
+                                    DropdownMenuItem(
+                                        text = { Text("Name (A-Z)") },
+                                        onClick = { sortOption = SortOption.NAME; sortMenuExpanded = false }
+                                    )
+                                    DropdownMenuItem(
+                                        text = { Text("Largest first") },
+                                        onClick = { sortOption = SortOption.SIZE_LARGEST; sortMenuExpanded = false }
+                                    )
+                                    DropdownMenuItem(
+                                        text = { Text("Newest first") },
+                                        onClick = { sortOption = SortOption.NEWEST; sortMenuExpanded = false }
+                                    )
+                                }
+                            }
+                            IconButton(onClick = { isGridView = !isGridView }, modifier = Modifier.size(32.dp)) {
+                                Icon(
+                                    if (isGridView) Icons.Default.ViewList else Icons.Default.GridView,
+                                    contentDescription = if (isGridView) "Switch to list view" else "Switch to grid view",
+                                    tint = SleekOnSurfaceVariant
+                                )
+                            }
+                        }
+                    }
+                }
+
                 if (isLoading) {
                     Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                         CircularProgressIndicator(color = SleekPrimary)
@@ -313,7 +324,7 @@ fun SelectFilesScreen(
                         Spacer(modifier = Modifier.height(10.dp))
                         Text("No $currentTab found on this device", fontSize = 14.sp, fontWeight = FontWeight.Bold, color = SleekOnSurface, textAlign = TextAlign.Center)
                     }
-                } else if (viewMode == PickerViewMode.GRID) {
+                } else if (isGridView) {
                     LazyVerticalGrid(
                         columns = GridCells.Fixed(3),
                         modifier = Modifier
@@ -334,18 +345,16 @@ fun SelectFilesScreen(
                     LazyColumn(
                         modifier = Modifier
                             .fillMaxSize()
-                            .padding(horizontal = 20.dp)
+                            .padding(horizontal = 16.dp, vertical = 4.dp)
                             .padding(bottom = if (grandSelectedCount > 0) 140.dp else 10.dp),
                         verticalArrangement = Arrangement.spacedBy(6.dp)
                     ) {
-                        item { Spacer(modifier = Modifier.height(2.dp)) }
-                        lazyRowItems(filteredFiles, key = { it.id }) { file ->
+                        items(filteredFiles, key = { it.id }) { file ->
                             FileListRowItem(
                                 file = file,
                                 onToggle = { viewModel.toggleFileSelection(file.id, file.isSelected) }
                             )
                         }
-                        item { Spacer(modifier = Modifier.height(90.dp)) }
                     }
                 }
             }
@@ -424,62 +433,7 @@ fun SelectFilesScreen(
     }
 }
 
-@Composable
-private fun SortMenuButton(current: PickerSortOption, onSelect: (PickerSortOption) -> Unit) {
-    var expanded by remember { mutableStateOf(false) }
-    Box {
-        Row(
-            modifier = Modifier
-                .clip(RoundedCornerShape(999.dp))
-                .background(SleekCard)
-                .border(1.dp, SleekOutline.copy(alpha = 0.4f), RoundedCornerShape(999.dp))
-                .clickable { expanded = true }
-                .padding(horizontal = 12.dp, vertical = 7.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Icon(Icons.Default.SwapVert, contentDescription = "Sort", tint = SleekOnSurfaceVariant, modifier = Modifier.size(15.dp))
-            Spacer(modifier = Modifier.width(5.dp))
-            Text(current.label, fontSize = 11.sp, fontWeight = FontWeight.SemiBold, color = SleekOnSurfaceVariant)
-        }
-        DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
-            PickerSortOption.entries.forEach { option ->
-                DropdownMenuItem(
-                    text = {
-                        Text(
-                            option.label,
-                            fontWeight = if (option == current) FontWeight.Bold else FontWeight.Normal,
-                            color = if (option == current) SleekPrimary else SleekOnSurface
-                        )
-                    },
-                    onClick = {
-                        onSelect(option)
-                        expanded = false
-                    }
-                )
-            }
-        }
-    }
-}
-
-@Composable
-private fun ViewModeToggle(mode: PickerViewMode, onToggle: () -> Unit) {
-    Box(
-        modifier = Modifier
-            .clip(RoundedCornerShape(999.dp))
-            .background(SleekCard)
-            .border(1.dp, SleekOutline.copy(alpha = 0.4f), RoundedCornerShape(999.dp))
-            .clickable { onToggle() }
-            .padding(horizontal = 10.dp, vertical = 7.dp),
-        contentAlignment = Alignment.Center
-    ) {
-        Icon(
-            if (mode == PickerViewMode.GRID) Icons.Default.ViewList else Icons.Default.GridView,
-            contentDescription = if (mode == PickerViewMode.GRID) "Switch to list view" else "Switch to grid view",
-            tint = SleekOnSurfaceVariant,
-            modifier = Modifier.size(16.dp)
-        )
-    }
-}
+private enum class SortOption { NAME, SIZE_LARGEST, NEWEST }
 
 @Composable
 fun FileListRowItem(
@@ -493,45 +447,54 @@ fun FileListRowItem(
             .background(SleekCard)
             .border(
                 width = if (file.isSelected) 2.dp else 1.dp,
-                color = if (file.isSelected) SleekPrimary else SleekOutline.copy(alpha = 0.3f),
+                color = if (file.isSelected) SleekPrimary else SleekOutline.copy(alpha = 0.35f),
                 shape = RoundedCornerShape(14.dp)
             )
             .clickable { onToggle() }
-            .padding(10.dp),
+            .padding(horizontal = 12.dp, vertical = 10.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
+        val icon = if (file.category == "Documents") {
+            willyshare.spark.ui.PulseIcons.forFileName(file.name)
+        } else {
+            willyshare.spark.ui.PulseIcons.forBrowseCategory(file.category)
+        }
         Box(
             modifier = Modifier
-                .size(44.dp)
+                .size(40.dp)
                 .clip(RoundedCornerShape(10.dp))
-                .background(SleekBg),
+                .background(SleekSurfaceContainer),
             contentAlignment = Alignment.Center
         ) {
-            Text(file.iconEmoji, fontSize = 20.sp)
+            Icon(icon, contentDescription = null, tint = SleekOnSurfaceVariant, modifier = Modifier.size(20.dp))
         }
         Spacer(modifier = Modifier.width(12.dp))
         Column(modifier = Modifier.weight(1f)) {
             Text(
-                file.name,
+                text = file.name,
                 fontSize = 13.sp,
                 fontWeight = FontWeight.SemiBold,
                 color = SleekOnSurface,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis
             )
-            Text(formatBytes(file.sizeBytes), fontSize = 11.sp, color = SleekOnSurfaceVariant)
+            Text(
+                text = formatBytes(file.sizeBytes),
+                fontSize = 11.sp,
+                color = SleekOnSurfaceVariant
+            )
         }
         Spacer(modifier = Modifier.width(8.dp))
         Box(
             modifier = Modifier
-                .size(24.dp)
+                .size(22.dp)
                 .clip(CircleShape)
                 .background(if (file.isSelected) SleekPrimary else Color.Transparent)
-                .border(1.5.dp, if (file.isSelected) SleekPrimary else SleekOutline.copy(alpha = 0.5f), CircleShape),
+                .border(1.dp, if (file.isSelected) SleekPrimary else SleekOutline.copy(alpha = 0.5f), CircleShape),
             contentAlignment = Alignment.Center
         ) {
             if (file.isSelected) {
-                Icon(Icons.Default.Check, contentDescription = "Selected", tint = Color.White, modifier = Modifier.size(13.dp))
+                Icon(Icons.Default.Check, contentDescription = "Selected", tint = Color.White, modifier = Modifier.size(14.dp))
             }
         }
     }

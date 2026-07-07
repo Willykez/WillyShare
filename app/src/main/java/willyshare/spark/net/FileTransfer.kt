@@ -23,9 +23,9 @@ import java.util.concurrent.Executors
 import java.util.concurrent.atomic.AtomicLong
 
 const val TRANSFER_PORT = 8988
-const val PARALLEL_STREAMS = 3
+const val PARALLEL_STREAMS = 4
 private const val CHUNK_SIZE = 4 * 1024 * 1024
-private const val SOCKET_BUF = 4 * 1024 * 1024
+private const val SOCKET_BUF = 2 shl 20 // 2 MB - a 5GHz link can push a lot more than the 1 MB this used to be
 private const val PROGRESS_THROTTLE_MS = 120L
 
 data class SendableFile(
@@ -135,8 +135,6 @@ class FileReceiveServer(private val targetProvider: () -> ReceiveTarget) {
     val isListening: StateFlow<Boolean> = _isListening.asStateFlow()
     private val _senderConnected = MutableStateFlow(false)
     val senderConnected: StateFlow<Boolean> = _senderConnected.asStateFlow()
-    private val _connectedDeviceName = MutableStateFlow<String?>(null)
-    val connectedDeviceName: StateFlow<String?> = _connectedDeviceName.asStateFlow()
 
     @Volatile private var serverChannel: ServerSocketChannel? = null
     @Volatile private var running = false
@@ -152,7 +150,6 @@ class FileReceiveServer(private val targetProvider: () -> ReceiveTarget) {
             try {
                 val server = ServerSocketChannel.open()
                 server.socket().reuseAddress = true
-                server.socket().receiveBufferSize = SOCKET_BUF
                 server.socket().bind(InetSocketAddress(TRANSFER_PORT))
                 serverChannel = server
                 _isListening.value = true
@@ -167,11 +164,12 @@ class FileReceiveServer(private val targetProvider: () -> ReceiveTarget) {
                     activeStreams.incrementAndGet()
                     _senderConnected.value = true
                     pool.execute {
-                        try { handleClient(client, onFileReceived) } finally {
-                            if (activeStreams.decrementAndGet() == 0L) {
-                                _senderConnected.value = false
-                                _connectedDeviceName.value = null
-                            }
+                        try {
+                            handleClient(client, onFileReceived)
+                        } catch (t: Throwable) {
+                            aggregator.setError(t.message ?: "Receive failed")
+                        } finally {
+                            if (activeStreams.decrementAndGet() == 0L) _senderConnected.value = false
                         }
                     }
                 }
@@ -186,11 +184,6 @@ class FileReceiveServer(private val targetProvider: () -> ReceiveTarget) {
     private fun handleClient(channel: SocketChannel, onFileReceived: (String, Long) -> Unit) {
         channel.use { ch ->
             val din = DataInputStream(ch.socket().getInputStream())
-            val nameLen = din.readInt().coerceIn(0, 256)
-            val nameBytes = ByteArray(nameLen)
-            din.readFully(nameBytes)
-            val senderName = String(nameBytes, StandardCharsets.UTF_8).ifBlank { "Nearby device" }
-            _connectedDeviceName.value = senderName
             val totalCount = din.readInt()
             aggregator.initExpectedTotal(totalCount)   // ← FIXED HERE
             val fileCount = din.readInt()
@@ -266,7 +259,6 @@ class FileReceiveServer(private val targetProvider: () -> ReceiveTarget) {
         serverChannel = null
         _isListening.value = false
         _senderConnected.value = false
-        _connectedDeviceName.value = null
     }
 }
 
@@ -274,39 +266,45 @@ class FileSenderClient(private val context: Context) {
     private val aggregator = ProgressAggregator()
     val progress: StateFlow<TransferProgress> = aggregator.flow.asStateFlow()
 
-    suspend fun send(hostIp: String, files: List<SendableFile>, senderDeviceName: String): Boolean = coroutineScope {
+    suspend fun send(hostIp: String, files: List<SendableFile>): Boolean = coroutineScope {
         if (files.isEmpty()) return@coroutineScope false
         aggregator.reset()
         aggregator.initExpectedTotal(files.size)   // ← FIXED HERE
         aggregator.setConnecting(true)
         aggregator.emit()
 
-        val groupCount = minOf(PARALLEL_STREAMS, files.size)
-        val groups = Array(groupCount) { mutableListOf<SendableFile>() }
-        files.forEachIndexed { i, f -> groups[i % groupCount].add(f) }
+        try {
+            val groupCount = minOf(PARALLEL_STREAMS, files.size)
+            val groups = Array(groupCount) { mutableListOf<SendableFile>() }
+            files.forEachIndexed { i, f -> groups[i % groupCount].add(f) }
 
-        val results = groups.map { group ->
-            async(Dispatchers.IO) { sendGroup(hostIp, files.size, group, senderDeviceName) }
-        }.map { it.await() }
+            // Every group already catches its own errors and resolves to a Boolean, but
+            // awaiting on Dispatchers.IO can still surface a CancellationException (e.g. the
+            // screen was left mid-transfer) or, in the worst case, an OutOfMemoryError from a
+            // huge file. Neither should ever crash the whole app - just report the failure.
+            val results = groups.map { group ->
+                async(Dispatchers.IO) { sendGroup(hostIp, files.size, group) }
+            }.map { runCatching { it.await() }.getOrDefault(false) }
 
-        aggregator.setConnecting(false)
-        val success = results.all { it }
-        aggregator.emit()
-        success
+            aggregator.setConnecting(false)
+            val success = results.all { it }
+            aggregator.emit()
+            success
+        } catch (t: Throwable) {
+            aggregator.setConnecting(false)
+            aggregator.setError(t.message ?: "Transfer failed")
+            aggregator.emit()
+            false
+        }
     }
 
-    private fun sendGroup(hostIp: String, totalCount: Int, files: List<SendableFile>, senderDeviceName: String): Boolean {
+    private fun sendGroup(hostIp: String, totalCount: Int, files: List<SendableFile>): Boolean {
         return try {
-            SocketChannel.open().use { channel ->
+            SocketChannel.open(InetSocketAddress(hostIp, TRANSFER_PORT)).use { channel ->
                 val socket = channel.socket()
                 socket.tcpNoDelay = true
                 socket.sendBufferSize = SOCKET_BUF
-                socket.receiveBufferSize = SOCKET_BUF
-                channel.connect(InetSocketAddress(hostIp, TRANSFER_PORT))
                 val dout = DataOutputStream(java.io.BufferedOutputStream(socket.getOutputStream(), 64 * 1024))
-                val deviceNameBytes = senderDeviceName.take(120).toByteArray(StandardCharsets.UTF_8)
-                dout.writeInt(deviceNameBytes.size)
-                dout.write(deviceNameBytes)
                 dout.writeInt(totalCount)
                 dout.writeInt(files.size)
                 dout.flush()
@@ -356,8 +354,8 @@ class FileSenderClient(private val context: Context) {
                 }
                 true
             }
-        } catch (e: Exception) {
-            aggregator.setError(e.message ?: "Transfer failed")
+        } catch (t: Throwable) {
+            aggregator.setError(t.message ?: "Transfer failed")
             false
         }
     }

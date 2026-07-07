@@ -6,15 +6,22 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Bolt
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.Icon
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Switch
+import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -34,6 +41,7 @@ import willyshare.spark.net.QrPairing
 import willyshare.spark.ui.AuroraBackground
 import willyshare.spark.ui.PulseViewModel
 import willyshare.spark.ui.InPageHeader
+import willyshare.spark.ui.theme.SleekCard
 import willyshare.spark.ui.theme.SleekOnSurface
 import willyshare.spark.ui.theme.SleekOnSurfaceVariant
 import willyshare.spark.ui.theme.SleekOutline
@@ -44,6 +52,8 @@ fun MyQrScreen(viewModel: PulseViewModel, onNavigate: (String) -> Unit) {
     val payload by viewModel.myQrPayload.collectAsState()
     val senderConnected by viewModel.senderConnected.collectAsState()
     val deviceName by viewModel.thisDeviceName.collectAsState()
+    val highSpeedMode by viewModel.highSpeedMode.collectAsState()
+    val fastConnectStatus by viewModel.fastConnectStatus.collectAsState()
 
     LaunchedEffect(Unit) { viewModel.refreshMyQrPayload() }
     LaunchedEffect(senderConnected) { if (senderConnected) onNavigate("receive") }
@@ -98,6 +108,43 @@ fun MyQrScreen(viewModel: PulseViewModel, onNavigate: (String) -> Unit) {
                         fontSize = 13.sp,
                         color = if (senderConnected) Color(0xFF2E7D32) else SleekOnSurfaceVariant,
                         textAlign = TextAlign.Center
+                    )
+                    fastConnectStatus?.let { status ->
+                        Spacer(modifier = Modifier.height(4.dp))
+                        Text(status, fontSize = 11.sp, color = SleekOnSurfaceVariant, textAlign = TextAlign.Center)
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(28.dp))
+                if (viewModel.isFastConnectSupported) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(16.dp))
+                            .background(SleekCard)
+                            .border(1.dp, SleekOutline.copy(alpha = 0.4f), RoundedCornerShape(16.dp))
+                            .padding(horizontal = 16.dp, vertical = 12.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Icon(Icons.Default.Bolt, contentDescription = null, tint = if (highSpeedMode) SleekPrimary else SleekOnSurfaceVariant)
+                        Spacer(modifier = Modifier.size(10.dp))
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text("High-speed Mode", fontSize = 14.sp, fontWeight = FontWeight.Bold, color = SleekOnSurface)
+                            Text(
+                                "Creates a dedicated 5GHz link between the two devices",
+                                fontSize = 11.sp, color = SleekOnSurfaceVariant
+                            )
+                        }
+                        Switch(
+                            checked = highSpeedMode,
+                            onCheckedChange = { viewModel.setHighSpeedMode(it) },
+                            colors = SwitchDefaults.colors(checkedThumbColor = SleekPrimary, checkedTrackColor = SleekPrimary.copy(alpha = 0.5f))
+                        )
+                    }
+                } else {
+                    Text(
+                        "High-speed mode needs Android 10 or newer on this device.",
+                        fontSize = 11.sp, color = SleekOnSurfaceVariant, textAlign = TextAlign.Center
                     )
                 }
             }

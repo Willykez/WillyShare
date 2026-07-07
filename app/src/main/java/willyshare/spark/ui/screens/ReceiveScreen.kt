@@ -73,7 +73,6 @@ fun ReceiveScreen(viewModel: PulseViewModel, onNavigate: (String) -> Unit) {
 
     val isListening by viewModel.isListening.collectAsState()
     val senderConnected by viewModel.senderConnected.collectAsState()
-    val connectedDeviceName by viewModel.connectedDeviceName.collectAsState()
     val progress by viewModel.receiveProgress.collectAsState()
     val deviceName by viewModel.thisDeviceName.collectAsState()
 
@@ -99,7 +98,6 @@ fun ReceiveScreen(viewModel: PulseViewModel, onNavigate: (String) -> Unit) {
                         title = "Receive",
                         subtitle = when {
                             !permissionsState.allPermissionsGranted -> "Permission needed"
-                            senderConnected -> "Connected to ${connectedDeviceName ?: "a nearby device"}"
                             isListening -> "Visible as \u201C$deviceName\u201D"
                             else -> "Starting listener\u2026"
                         },
@@ -167,28 +165,13 @@ fun ReceiveScreen(viewModel: PulseViewModel, onNavigate: (String) -> Unit) {
                         }
 
                         Spacer(modifier = Modifier.height(16.dp))
-                        if (senderConnected) {
-                            Row(
-                                verticalAlignment = Alignment.CenterVertically,
-                                modifier = Modifier
-                                    .clip(RoundedCornerShape(999.dp))
-                                    .background(Color(0xFF2E7D32).copy(alpha = 0.14f))
-                                    .border(1.dp, Color(0xFF2E7D32).copy(alpha = 0.4f), RoundedCornerShape(999.dp))
-                                    .padding(horizontal = 14.dp, vertical = 6.dp)
-                            ) {
-                                Box(modifier = Modifier.size(8.dp).clip(CircleShape).background(Color(0xFF2E7D32)))
-                                Spacer(modifier = Modifier.width(8.dp))
-                                Text(
-                                    "Connected \u2022 ${connectedDeviceName ?: "Nearby device"}",
-                                    fontSize = 12.sp,
-                                    fontWeight = FontWeight.Bold,
-                                    color = Color(0xFF2E7D32)
-                                )
-                            }
-                            Spacer(modifier = Modifier.height(10.dp))
-                        }
                         Text(
-                            text = if (senderConnected) (if (progress.isComplete) "Transfer complete" else "Receiving\u2026") else "Waiting to receive",
+                            text = when {
+                                !senderConnected -> "Waiting to receive"
+                                progress.isComplete -> "Transfer complete"
+                                progress.overallTotal > 0 -> "Receiving\u2026"
+                                else -> "Connected"
+                            },
                             fontSize = 20.sp, fontWeight = FontWeight.Bold, color = SleekOnSurface
                         )
                         Spacer(modifier = Modifier.height(6.dp))
@@ -197,6 +180,20 @@ fun ReceiveScreen(viewModel: PulseViewModel, onNavigate: (String) -> Unit) {
                                 "Ask the sender to pick \u201C$deviceName\u201D from their Send screen,\nor scan your QR code.",
                                 fontSize = 13.sp, color = SleekOnSurfaceVariant, textAlign = TextAlign.Center
                             )
+                        } else if (progress.overallTotal == 0L) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Box(
+                                    modifier = Modifier
+                                        .size(8.dp)
+                                        .clip(CircleShape)
+                                        .background(Color(0xFF2E7D32))
+                                )
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Text(
+                                    "Sender connected \u2014 waiting for files\u2026",
+                                    fontSize = 13.sp, color = SleekOnSurfaceVariant, textAlign = TextAlign.Center
+                                )
+                            }
                         }
 
                         progress.error?.let {

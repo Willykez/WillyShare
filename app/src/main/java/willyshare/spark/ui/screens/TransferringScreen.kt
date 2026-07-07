@@ -67,7 +67,10 @@ fun TransferringScreen(viewModel: PulseViewModel, onNavigate: (String) -> Unit) 
                 ) {
                     Text(
                         text = "Cancel", fontSize = 13.sp, fontWeight = FontWeight.Bold, color = Color(0xFFD32F2F),
-                        modifier = Modifier.clickable { onNavigate("dashboard") }
+                        modifier = Modifier.clickable {
+                            viewModel.cancelTransferSession()
+                            onNavigate("dashboard")
+                        }
                     )
                 }
 

@@ -39,26 +39,6 @@ import java.util.UUID
 /** How the current outgoing transfer's target was resolved. */
 enum class TargetSource { WIFI_DIRECT, QR_PAIR, NONE }
 
-enum class PickerViewMode { GRID, LIST }
-
-enum class PickerSortOption(val label: String) {
-    DATE_NEWEST("Newest first"),
-    DATE_OLDEST("Oldest first"),
-    NAME_ASC("Name (A-Z)"),
-    NAME_DESC("Name (Z-A)"),
-    SIZE_LARGEST("Largest first"),
-    SIZE_SMALLEST("Smallest first")
-}
-
-fun List<FileItemEntity>.sortedByOption(option: PickerSortOption): List<FileItemEntity> = when (option) {
-    PickerSortOption.DATE_NEWEST -> sortedByDescending { it.dateModifiedSeconds }
-    PickerSortOption.DATE_OLDEST -> sortedBy { it.dateModifiedSeconds }
-    PickerSortOption.NAME_ASC -> sortedBy { it.name.lowercase() }
-    PickerSortOption.NAME_DESC -> sortedByDescending { it.name.lowercase() }
-    PickerSortOption.SIZE_LARGEST -> sortedByDescending { it.sizeBytes }
-    PickerSortOption.SIZE_SMALLEST -> sortedBy { it.sizeBytes }
-}
-
 class PulseViewModel(application: Application) : AndroidViewModel(application) {
     private val dao = PulseDatabase.getDatabase(application).pulseDao()
     private val appContext get() = getApplication<Application>()
@@ -110,8 +90,6 @@ class PulseViewModel(application: Application) : AndroidViewModel(application) {
 
     val isLoadingFiles = MutableStateFlow(false)
     val selectedCategoryTab = MutableStateFlow("Photos")
-    val pickerViewMode = MutableStateFlow(PickerViewMode.GRID)
-    val pickerSortOption = MutableStateFlow(PickerSortOption.DATE_NEWEST)
 
     // ---- Full-device folder browser (internal storage + SD card, folders included) ----
     val storageRoots: List<StorageRoot> by lazy { LocalFileSystem.storageRoots(appContext) }
@@ -141,13 +119,17 @@ class PulseViewModel(application: Application) : AndroidViewModel(application) {
     // ---- Receive flow ----
     val isListening: StateFlow<Boolean> = fileReceiver.isListening
     val senderConnected: StateFlow<Boolean> = fileReceiver.senderConnected
-    val connectedDeviceName: StateFlow<String?> = fileReceiver.connectedDeviceName
     val receiveProgress: StateFlow<TransferProgress> = fileReceiver.progress
 
     // ---- Send flow progress ----
     val sendProgress: StateFlow<TransferProgress> = fileSender.progress
 
     val myQrPayload = MutableStateFlow<String?>(null)
+    /** "High-speed Mode" toggle (mirrors Xender's): creates our own 5GHz Wi-Fi Direct
+     *  group instead of relying on whatever Wi-Fi network happens to be shared. */
+    val highSpeedMode = MutableStateFlow(false)
+    val fastConnectStatus = MutableStateFlow<String?>(null)
+    val isFastConnectSupported: Boolean get() = wifiDirect.isFastConnectSupported
 
     init {
         wifiDirect.start()
@@ -162,10 +144,8 @@ class PulseViewModel(application: Application) : AndroidViewModel(application) {
             }
         }
         viewModelScope.launch {
-            connectedDeviceName.collect { name ->
-                if (name != null) {
-                    NotificationHelper.notifyConnectionStatus(appContext, connected = true, deviceName = name)
-                }
+            fileReceiver.senderConnected.collect { connected ->
+                if (connected) NotificationHelper.notifyConnectionStatus(appContext, connected = true, deviceName = "Nearby device")
             }
         }
         viewModelScope.launch {
@@ -317,18 +297,51 @@ class PulseViewModel(application: Application) : AndroidViewModel(application) {
     /** Called on the Receive screen: builds this device's own pairing QR content. */
     fun refreshMyQrPayload() {
         val ip = NetworkUtils.getLocalIpAddress()
-        myQrPayload.value = if (ip != null) {
-            QrPairing.buildPayload(wifiDirect.thisDeviceName.value, ip, TRANSFER_PORT)
-        } else null
+        if (highSpeedMode.value && wifiDirect.isFastConnectSupported) {
+            val suffix = UUID.randomUUID().toString().take(4).uppercase()
+            val networkName = "DIRECT-sk-Sparks$suffix"
+            val passphrase = UUID.randomUUID().toString().replace("-", "").take(12)
+            wifiDirect.createFastGroup(networkName, passphrase, preferHighSpeed = true) { success, message ->
+                fastConnectStatus.value = message
+                myQrPayload.value = when {
+                    success -> QrPairing.buildFastConnectPayload(
+                        wifiDirect.thisDeviceName.value, ip ?: "0.0.0.0", TRANSFER_PORT, networkName, passphrase
+                    )
+                    ip != null -> QrPairing.buildPayload(wifiDirect.thisDeviceName.value, ip, TRANSFER_PORT)
+                    else -> null
+                }
+            }
+        } else {
+            fastConnectStatus.value = null
+            myQrPayload.value = if (ip != null) {
+                QrPairing.buildPayload(wifiDirect.thisDeviceName.value, ip, TRANSFER_PORT)
+            } else null
+        }
+    }
+
+    fun setHighSpeedMode(enabled: Boolean) {
+        if (highSpeedMode.value == enabled) return
+        highSpeedMode.value = enabled
+        if (!enabled) wifiDirect.stopGroup()
+        refreshMyQrPayload()
     }
 
     /** Called on the Send screen after a successful QR scan of another device's code. */
     fun applyScannedPayload(raw: String): Boolean {
         val parsed = QrPairing.parsePayload(raw) ?: return false
+        targetName.value = parsed.deviceName
+        // Always set the LAN ip/port bundled in the QR first. If this is a high-speed
+        // (Wi-Fi Direct Fast Connect) code, the connectionInfo collector in init{}
+        // will overwrite targetIp with the P2P group owner's address - the 5GHz link -
+        // once the join below succeeds; on failure we simply keep using this LAN address.
         targetIp.value = parsed.ip
         targetPort.value = parsed.port
-        targetName.value = parsed.deviceName
         targetSource.value = TargetSource.QR_PAIR
+        if (parsed.isFastConnect && wifiDirect.isFastConnectSupported) {
+            wifiDirect.joinFastGroup(parsed.fastConnectNetworkName!!, parsed.fastConnectPassphrase!!) { _, message ->
+                fastConnectStatus.value = message
+            }
+        }
         return true
     }
 
@@ -378,6 +391,9 @@ class PulseViewModel(application: Application) : AndroidViewModel(application) {
 
     // ---------- Sending files ----------
 
+    /** The in-flight send coroutine, if any - kept so [cancelTransferSession] can actually stop it. */
+    private var transferJob: kotlinx.coroutines.Job? = null
+
     fun startTransferSession(onComplete: (Boolean) -> Unit) {
         val ip = targetIp.value
         if (ip == null) {
@@ -385,51 +401,70 @@ class PulseViewModel(application: Application) : AndroidViewModel(application) {
             return
         }
         SparkTransferService.start(appContext)
-        viewModelScope.launch {
-            val selected = allFiles.value.filter { it.isSelected }
-            val fromMediaStore = selected.map { SendableFile(Uri.parse(it.uri), it.name, it.sizeBytes) }
-            val fromBrowser = resolveBrowseSendables()
-            val fromShareIntent = pendingSharedFiles.value
-            val sendables = fromMediaStore + fromBrowser + fromShareIntent
-            val success = withContext(Dispatchers.IO) {
-                fileSender.send(ip, sendables, wifiDirect.thisDeviceName.value)
-            }
-            if (success) {
-                selected.forEach { f ->
-                    dao.insertTransfer(
-                        TransferEntity(
-                            id = UUID.randomUUID().toString(),
-                            fileName = f.name,
-                            category = f.category.uppercase(),
-                            sizeBytes = f.sizeBytes,
-                            timestamp = System.currentTimeMillis(),
-                            deviceName = targetName.value ?: "Nearby device",
-                            isSend = true,
-                            status = "COMPLETED"
-                        )
-                    )
+        transferJob = viewModelScope.launch {
+            // Wrapped end-to-end: any unexpected exception here (a bad URI, a database
+            // hiccup, a socket dying mid-write) must never crash the app - it should just
+            // surface as a failed transfer with an error message on screen.
+            var success = false
+            try {
+                val selected = allFiles.value.filter { it.isSelected }
+                val fromMediaStore = selected.map { SendableFile(Uri.parse(it.uri), it.name, it.sizeBytes) }
+                val fromBrowser = resolveBrowseSendables()
+                val fromShareIntent = pendingSharedFiles.value
+                val sendables = fromMediaStore + fromBrowser + fromShareIntent
+                success = withContext(Dispatchers.IO) {
+                    fileSender.send(ip, sendables)
                 }
-                (fromBrowser + fromShareIntent).forEach { f ->
-                    dao.insertTransfer(
-                        TransferEntity(
-                            id = UUID.randomUUID().toString(),
-                            fileName = f.name,
-                            category = categoryForFile(f.name),
-                            sizeBytes = f.sizeBytes,
-                            timestamp = System.currentTimeMillis(),
-                            deviceName = targetName.value ?: "Nearby device",
-                            isSend = true,
-                            status = "COMPLETED"
+                if (success) {
+                    selected.forEach { f ->
+                        dao.insertTransfer(
+                            TransferEntity(
+                                id = UUID.randomUUID().toString(),
+                                fileName = f.name,
+                                category = f.category.uppercase(),
+                                sizeBytes = f.sizeBytes,
+                                timestamp = System.currentTimeMillis(),
+                                deviceName = targetName.value ?: "Nearby device",
+                                isSend = true,
+                                status = "COMPLETED"
+                            )
                         )
-                    )
+                    }
+                    (fromBrowser + fromShareIntent).forEach { f ->
+                        dao.insertTransfer(
+                            TransferEntity(
+                                id = UUID.randomUUID().toString(),
+                                fileName = f.name,
+                                category = categoryForFile(f.name),
+                                sizeBytes = f.sizeBytes,
+                                timestamp = System.currentTimeMillis(),
+                                deviceName = targetName.value ?: "Nearby device",
+                                isSend = true,
+                                status = "COMPLETED"
+                            )
+                        )
+                    }
+                    dao.clearAllSelections()
+                    clearBrowseSelection()
+                    pendingSharedFiles.value = emptyList()
                 }
-                dao.clearAllSelections()
-                clearBrowseSelection()
-                pendingSharedFiles.value = emptyList()
+            } catch (_: kotlinx.coroutines.CancellationException) {
+                // User hit Cancel - not an error, just stop quietly.
+            } catch (t: Throwable) {
+                success = false
+            } finally {
+                SparkTransferService.stopIfIdle(appContext)
+                transferJob = null
+                onComplete(success)
             }
-            SparkTransferService.stopIfIdle(appContext)
-            onComplete(success)
         }
+    }
+
+    /** Called from the Cancel action on the transferring screen: actually stops the send instead of just navigating away. */
+    fun cancelTransferSession() {
+        transferJob?.cancel()
+        transferJob = null
+        SparkTransferService.stopIfIdle(appContext)
     }
 
     // ---------- Files shared into Sparks from another app (Gallery, Files, etc.) ----------

@@ -46,6 +46,7 @@ import androidx.compose.ui.viewinterop.AndroidView
 import androidx.core.content.ContextCompat
 import willyshare.spark.ui.PulseViewModel
 import willyshare.spark.ui.InPageHeader
+import willyshare.spark.ui.theme.SleekBg
 import willyshare.spark.ui.theme.SleekOnSurfaceVariant
 import willyshare.spark.ui.theme.SleekPrimary
 import com.google.accompanist.permissions.ExperimentalPermissionsApi
@@ -56,8 +57,6 @@ import com.google.zxing.MultiFormatReader
 import com.google.zxing.NotFoundException
 import com.google.zxing.PlanarYUVLuminanceSource
 import com.google.zxing.common.HybridBinarizer
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Check
 
 @OptIn(ExperimentalPermissionsApi::class)
 @Composable
@@ -68,38 +67,28 @@ fun ScanQrScreen(
     val cameraPermission = rememberPermissionState(Manifest.permission.CAMERA)
     var scanResultMessage by remember { mutableStateOf<String?>(null) }
     var isProcessing by remember { mutableStateOf(false) }
-    var connectedName by remember { mutableStateOf<String?>(null) }
 
     LaunchedEffect(Unit) {
-        if (!cameraPermission.status.isGranted) {
-            cameraPermission.launchPermissionRequest()
-        }
+        if (!cameraPermission.status.isGranted) cameraPermission.launchPermissionRequest()
     }
 
-    LaunchedEffect(connectedName) {
-        val name = connectedName ?: return@LaunchedEffect
-        kotlinx.coroutines.delay(900)
-        onNavigate("select")
-    }
-
-    Scaffold(containerColor = Color.Transparent) { innerPadding ->
+    Scaffold(
+        containerColor = androidx.compose.ui.graphics.Color.Transparent
+    ) { innerPadding ->
         Box(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(innerPadding)
         ) {
-
             if (cameraPermission.status.isGranted) {
-
                 CameraPreviewWithScanner(
                     isProcessing = isProcessing,
                     onDecoded = { raw ->
                         if (!isProcessing) {
                             isProcessing = true
                             val ok = viewModel.applyScannedPayload(raw)
-
                             if (ok) {
-                                connectedName = viewModel.targetName.value ?: "device"
+                                onNavigate("select")
                             } else {
                                 scanResultMessage = "That QR isn't a valid Pulse pairing code."
                                 isProcessing = false
@@ -115,58 +104,11 @@ fun ScanQrScreen(
                         .border(3.dp, SleekPrimary, RoundedCornerShape(24.dp))
                 )
 
-                if (connectedName != null) {
-                    Box(
-                        modifier = Modifier
-                            .fillMaxSize()
-                            .background(Color.Black.copy(alpha = 0.55f)),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
-
-                            Box(
-                                modifier = Modifier
-                                    .size(72.dp)
-                                    .clip(RoundedCornerShape(999.dp))
-                                    .background(Color(0xFF2E7D32).copy(alpha = 0.18f))
-                                    .border(2.dp, Color(0xFF2E7D32), RoundedCornerShape(999.dp)),
-                                contentAlignment = Alignment.Center
-                            ) {
-                                Icon(
-                                    imageVector = Icons.Default.Check,
-                                    contentDescription = null,
-                                    tint = Color(0xFF2E7D32),
-                                    modifier = Modifier.size(36.dp)
-                                )
-                            }
-
-                            Spacer(modifier = Modifier.height(16.dp))
-
-                            Text(
-                                "Connected",
-                                color = Color.White,
-                                fontSize = 20.sp,
-                                fontWeight = FontWeight.Bold
-                            )
-
-                            Spacer(modifier = Modifier.height(4.dp))
-
-                            Text(
-                                connectedName ?: "",
-                                color = Color.White.copy(alpha = 0.85f),
-                                fontSize = 14.sp
-                            )
-                        }
-                    }
-                }
-
                 InPageHeader(
                     title = "Scan pairing QR",
                     showBack = true,
                     onBack = { onNavigate("send") },
-                    modifier = Modifier
-                        .align(Alignment.TopCenter)
-                        .background(Color.Black.copy(alpha = 0.35f))
+                    modifier = Modifier.align(Alignment.TopCenter).background(Color.Black.copy(alpha = 0.35f)),
                 )
 
                 Column(
@@ -178,23 +120,19 @@ fun ScanQrScreen(
                     horizontalAlignment = Alignment.CenterHorizontally
                 ) {
                     Text(
-                        text = scanResultMessage
-                            ?: "Point your camera at the receiver's pairing QR code",
+                        text = scanResultMessage ?: "Point your camera at the receiver's pairing QR code",
                         color = Color.White,
                         fontSize = 13.sp,
                         textAlign = TextAlign.Center
                     )
                 }
-
             } else {
-
                 InPageHeader(
                     title = "Scan pairing QR",
                     showBack = true,
                     onBack = { onNavigate("send") },
-                    modifier = Modifier.align(Alignment.TopCenter)
+                    modifier = Modifier.align(Alignment.TopCenter),
                 )
-
                 Column(
                     modifier = Modifier
                         .fillMaxSize()
@@ -202,32 +140,17 @@ fun ScanQrScreen(
                     horizontalAlignment = Alignment.CenterHorizontally,
                     verticalArrangement = Arrangement.Center
                 ) {
-                    Icon(
-                        willyshare.spark.ui.PulseIcons.Camera,
-                        contentDescription = null,
-                        tint = SleekOnSurfaceVariant,
-                        modifier = Modifier.size(40.dp)
-                    )
-
+                    Icon(willyshare.spark.ui.PulseIcons.Camera, contentDescription = null, tint = SleekOnSurfaceVariant, modifier = Modifier.size(40.dp))
                     Spacer(modifier = Modifier.height(12.dp))
-
-                    Text(
-                        "Camera permission needed",
-                        fontSize = 16.sp,
-                        fontWeight = FontWeight.Bold
-                    )
-
+                    Text("Camera permission needed", fontSize = 16.sp, fontWeight = FontWeight.Bold)
                     Spacer(modifier = Modifier.height(6.dp))
-
                     Text(
                         "Pulse needs camera access to scan pairing QR codes.",
                         fontSize = 13.sp,
                         color = SleekOnSurfaceVariant,
                         textAlign = TextAlign.Center
                     )
-
                     Spacer(modifier = Modifier.height(16.dp))
-
                     Button(
                         onClick = { cameraPermission.launchPermissionRequest() },
                         shape = RoundedCornerShape(999.dp),
@@ -255,32 +178,28 @@ private fun CameraPreviewWithScanner(
         factory = { ctx ->
             val previewView = PreviewView(ctx)
             val cameraProviderFuture = ProcessCameraProvider.getInstance(ctx)
-
             cameraProviderFuture.addListener({
                 val cameraProvider = cameraProviderFuture.get()
-
                 val preview = Preview.Builder().build().also {
                     it.setSurfaceProvider(previewView.surfaceProvider)
                 }
-
                 val analysis = ImageAnalysis.Builder()
                     .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
                     .build()
-
                 analysis.setAnalyzer(ContextCompat.getMainExecutor(ctx)) { imageProxy ->
                     decodeFrame(imageProxy, reader, isProcessing, onDecoded)
                 }
-
-                cameraProvider.unbindAll()
-                cameraProvider.bindToLifecycle(
-                    lifecycleOwner,
-                    CameraSelector.DEFAULT_BACK_CAMERA,
-                    preview,
-                    analysis
-                )
-
+                try {
+                    cameraProvider.unbindAll()
+                    cameraProvider.bindToLifecycle(
+                        lifecycleOwner,
+                        CameraSelector.DEFAULT_BACK_CAMERA,
+                        preview,
+                        analysis
+                    )
+                } catch (_: Exception) {
+                }
             }, ContextCompat.getMainExecutor(ctx))
-
             previewView
         }
     )
@@ -305,32 +224,21 @@ private fun decodeFrame(
         imageProxy.close()
         return
     }
-
     try {
-        val yBuffer = imageProxy.planes[0].buffer
+        val yPlane = imageProxy.planes[0]
+        val yBuffer = yPlane.buffer
         val data = ByteArray(yBuffer.remaining())
         yBuffer.get(data)
-
         val source = PlanarYUVLuminanceSource(
-            data,
-            imageProxy.width,
-            imageProxy.height,
-            0,
-            0,
-            imageProxy.width,
-            imageProxy.height,
-            false
+            data, imageProxy.width, imageProxy.height,
+            0, 0, imageProxy.width, imageProxy.height, false
         )
-
         val bitmap = BinaryBitmap(HybridBinarizer(source))
         val result = reader.decode(bitmap)
-
         onDecoded(result.text)
-
     } catch (_: NotFoundException) {
-        // ignore
+        // No QR code in this frame - expected most of the time, keep scanning.
     } catch (_: Exception) {
-        // ignore
     } finally {
         reader.reset()
         imageProxy.close()

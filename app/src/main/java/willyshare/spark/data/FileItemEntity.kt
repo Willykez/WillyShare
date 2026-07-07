@@ -17,5 +17,6 @@ data class FileItemEntity(
     val iconEmoji: String,
     val uri: String,
     val isSelected: Boolean = false,
-    val dateModifiedSeconds: Long = 0L
+    /** Last-modified time in epoch milliseconds, used for "Newest first" sorting. 0 if unknown. */
+    val dateModifiedMs: Long = 0L
 )

@@ -87,56 +87,44 @@ object NotificationHelper {
     /** Updates the shared foreground-notification slot with fresh progress (works even outside the service). */
     fun updateProgress(context: Context, isSending: Boolean, progress: TransferProgress) {
         if (!hasPostPermission(context)) return
-        try {
-            NotificationManagerCompat.from(context)
-                .notify(FOREGROUND_NOTIFICATION_ID, buildProgressNotification(context, isSending, progress))
-        } catch (e: Exception) {
-            android.util.Log.w("NotificationHelper", "updateProgress failed", e)
-        }
+        NotificationManagerCompat.from(context)
+            .notify(FOREGROUND_NOTIFICATION_ID, buildProgressNotification(context, isSending, progress))
     }
 
     fun notifyConnectionStatus(context: Context, connected: Boolean, deviceName: String?) {
         if (!hasPostPermission(context)) return
-        try {
-            ensureChannels(context)
-            val notification = NotificationCompat.Builder(context, EVENTS_CHANNEL_ID)
-                .setContentTitle(if (connected) "Connected" else "Disconnected")
-                .setContentText(
-                    if (connected) "Linked with ${deviceName ?: "a nearby device"}" else "Connection ended",
-                )
-                .setSmallIcon(R.drawable.ic_notification_spark)
-                .setAutoCancel(true)
-                .setContentIntent(openAppIntent(context))
-                .setPriority(NotificationCompat.PRIORITY_DEFAULT)
-                .build()
-            NotificationManagerCompat.from(context).notify(nextEventId(), notification)
-        } catch (e: Exception) {
-            android.util.Log.w("NotificationHelper", "notifyConnectionStatus failed", e)
-        }
+        ensureChannels(context)
+        val notification = NotificationCompat.Builder(context, EVENTS_CHANNEL_ID)
+            .setContentTitle(if (connected) "Connected" else "Disconnected")
+            .setContentText(
+                if (connected) "Linked with ${deviceName ?: "a nearby device"}" else "Connection ended",
+            )
+            .setSmallIcon(R.drawable.ic_notification_spark)
+            .setAutoCancel(true)
+            .setContentIntent(openAppIntent(context))
+            .setPriority(NotificationCompat.PRIORITY_DEFAULT)
+            .build()
+        NotificationManagerCompat.from(context).notify(nextEventId(), notification)
     }
 
     /** Posted when a file finishes writing to disk; tapping it opens the file with the system chooser. */
     fun notifyFileReceived(context: Context, fileName: String) {
         if (!hasPostPermission(context)) return
-        try {
-            ensureChannels(context)
-            val intent = MainActivity.newIntent(context)
-            val pendingIntent = PendingIntent.getActivity(
-                context, fileName.hashCode(), intent,
-                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
-            )
-            val notification = NotificationCompat.Builder(context, EVENTS_CHANNEL_ID)
-                .setContentTitle("File received")
-                .setContentText(fileName)
-                .setSmallIcon(R.drawable.ic_notification_spark)
-                .setAutoCancel(true)
-                .setContentIntent(pendingIntent)
-                .setPriority(NotificationCompat.PRIORITY_DEFAULT)
-                .build()
-            NotificationManagerCompat.from(context).notify(nextEventId(), notification)
-        } catch (e: Exception) {
-            android.util.Log.w("NotificationHelper", "notifyFileReceived failed", e)
-        }
+        ensureChannels(context)
+        val intent = MainActivity.newIntent(context)
+        val pendingIntent = PendingIntent.getActivity(
+            context, fileName.hashCode(), intent,
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
+        )
+        val notification = NotificationCompat.Builder(context, EVENTS_CHANNEL_ID)
+            .setContentTitle("File received")
+            .setContentText(fileName)
+            .setSmallIcon(R.drawable.ic_notification_spark)
+            .setAutoCancel(true)
+            .setContentIntent(pendingIntent)
+            .setPriority(NotificationCompat.PRIORITY_DEFAULT)
+            .build()
+        NotificationManagerCompat.from(context).notify(nextEventId(), notification)
     }
 
     private fun nextEventId(): Int = EVENT_NOTIFICATION_ID_BASE + (eventIdCounter++ % 500)

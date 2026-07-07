@@ -19,23 +19,16 @@ import willyshare.spark.util.NotificationHelper
 class SparkTransferService : Service() {
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-        try {
-            val notification = NotificationHelper.buildIdleListeningNotification(this)
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-                ServiceCompat.startForeground(
-                    this,
-                    NotificationHelper.FOREGROUND_NOTIFICATION_ID,
-                    notification,
-                    android.content.pm.ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC,
-                )
-            } else {
-                startForeground(NotificationHelper.FOREGROUND_NOTIFICATION_ID, notification)
-            }
-        } catch (e: Exception) {
-            // If the OS refuses the foreground promotion for any reason, Sparks still works -
-            // it just won't survive backgrounding as reliably. Never let this crash the app.
-            android.util.Log.w("SparkTransferService", "startForeground failed", e)
-            stopSelf()
+        val notification = NotificationHelper.buildIdleListeningNotification(this)
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            ServiceCompat.startForeground(
+                this,
+                NotificationHelper.FOREGROUND_NOTIFICATION_ID,
+                notification,
+                android.content.pm.ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC,
+            )
+        } else {
+            startForeground(NotificationHelper.FOREGROUND_NOTIFICATION_ID, notification)
         }
         return START_STICKY
     }
@@ -44,13 +37,8 @@ class SparkTransferService : Service() {
 
     companion object {
         fun start(context: Context) {
-            try {
-                val intent = Intent(context, SparkTransferService::class.java)
-                context.startService(intent)
-            } catch (e: Exception) {
-                // Never let a keep-alive/notification failure take down an in-progress transfer.
-                android.util.Log.w("SparkTransferService", "Failed to start", e)
-            }
+            val intent = Intent(context, SparkTransferService::class.java)
+            context.startService(intent)
         }
 
         /**
@@ -59,11 +47,7 @@ class SparkTransferService : Service() {
          * assumption changes (e.g. simultaneous send+receive), swap this for a reference count.
          */
         fun stopIfIdle(context: Context) {
-            try {
-                context.stopService(Intent(context, SparkTransferService::class.java))
-            } catch (e: Exception) {
-                android.util.Log.w("SparkTransferService", "Failed to stop", e)
-            }
+            context.stopService(Intent(context, SparkTransferService::class.java))
         }
     }
 }

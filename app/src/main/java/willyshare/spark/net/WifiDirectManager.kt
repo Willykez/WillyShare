@@ -8,8 +8,10 @@ import android.content.IntentFilter
 import android.net.wifi.WpsInfo
 import android.net.wifi.p2p.WifiP2pConfig
 import android.net.wifi.p2p.WifiP2pDevice
+import android.net.wifi.p2p.WifiP2pGroup
 import android.net.wifi.p2p.WifiP2pInfo
 import android.net.wifi.p2p.WifiP2pManager
+import android.os.Build
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -43,6 +45,11 @@ class WifiDirectManager(private val context: Context) {
 
     private val _lastError = MutableStateFlow<String?>(null)
     val lastError: StateFlow<String?> = _lastError.asStateFlow()
+
+    private val _groupInfo = MutableStateFlow<WifiP2pGroup?>(null)
+    val groupInfo: StateFlow<WifiP2pGroup?> = _groupInfo.asStateFlow()
+
+    val isFastConnectSupported: Boolean get() = Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q
 
     val isSupported: Boolean get() = manager != null
 
@@ -145,25 +152,10 @@ class WifiDirectManager(private val context: Context) {
     fun connect(device: WifiP2pDevice, onResult: (Boolean, String) -> Unit) {
         val mgr = manager ?: return onResult(false, "Wi-Fi Direct not supported")
         val ch = channel ?: return onResult(false, "Not initialized")
-
-        // Android 10+ lets us hint a 5GHz group-owner band, which is the single biggest
-        // lever for real-world throughput - Wi-Fi Direct silently falls back to 2.4GHz
-        // otherwise on most chipsets. Below API 29 there's no such knob; WPS PBC is all
-        // we get, and the OS/chipset picks the band on its own.
-        val config = if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.Q) {
-            WifiP2pConfig.Builder()
-                .setDeviceAddress(android.net.MacAddress.fromString(device.deviceAddress))
-                .setGroupOwnerIntent(15) // Max intent: prefer becoming GO so *we* control the band.
-                .enablePersistentMode(false)
-                .setGroupOwnerBand(WifiP2pConfig.GROUP_OWNER_BAND_5GHZ)
-                .build()
-        } else {
-            WifiP2pConfig().apply {
-                deviceAddress = device.deviceAddress
-                wps.setup = WpsInfo.PBC
-            }
+        val config = WifiP2pConfig().apply {
+            deviceAddress = device.deviceAddress
+            wps.setup = WpsInfo.PBC
         }
-
         try {
             mgr.connect(ch, config, object : WifiP2pManager.ActionListener {
                 override fun onSuccess() {
@@ -176,26 +168,6 @@ class WifiDirectManager(private val context: Context) {
             })
         } catch (e: SecurityException) {
             onResult(false, "Missing permission to connect")
-        } catch (e: Exception) {
-            // Some OEM stacks reject the 5GHz-band builder config outright (rare, but seen on
-            // a handful of chipsets); retry once with the plain WPS config as a safe fallback.
-            val fallback = WifiP2pConfig().apply {
-                deviceAddress = device.deviceAddress
-                wps.setup = WpsInfo.PBC
-            }
-            try {
-                mgr.connect(ch, fallback, object : WifiP2pManager.ActionListener {
-                    override fun onSuccess() {
-                        onResult(true, "Connecting to ${device.deviceName}\u2026")
-                    }
-
-                    override fun onFailure(reason: Int) {
-                        onResult(false, "Connection failed (code $reason)")
-                    }
-                })
-            } catch (e2: SecurityException) {
-                onResult(false, "Missing permission to connect")
-            }
         }
     }
 
@@ -207,5 +179,96 @@ class WifiDirectManager(private val context: Context) {
         } catch (_: Exception) {
         }
         _connectionInfo.value = null
+        _groupInfo.value = null
+    }
+
+    /**
+     * HOST side of "high-speed mode": creates this device's own autonomous Wi-Fi Direct
+     * group and, on Android 10+, pins it to the 5GHz band - the same trick apps like
+     * Xender use to get 30-40 MB/s instead of the ~6 MB/s a 2.4GHz link caps out at.
+     * On older Android versions there's no API to force the band, so this falls back to
+     * a normal (auto-band) group; the caller should treat [preferHighSpeed] as a best effort.
+     */
+    @SuppressLint("MissingPermission")
+    fun createFastGroup(networkName: String, passphrase: String, preferHighSpeed: Boolean, onResult: (Boolean, String) -> Unit) {
+        val mgr = manager ?: return onResult(false, "Wi-Fi Direct not supported")
+        val ch = channel ?: return onResult(false, "Not initialized")
+
+        val listener = object : WifiP2pManager.ActionListener {
+            override fun onSuccess() {
+                try {
+                    mgr.requestGroupInfo(ch) { group -> _groupInfo.value = group }
+                } catch (_: SecurityException) {
+                }
+                onResult(true, if (preferHighSpeed && isFastConnectSupported) "Group created (5GHz)" else "Group created")
+            }
+
+            override fun onFailure(reason: Int) {
+                onResult(false, "Group creation failed (code $reason)")
+            }
+        }
+
+        try {
+            if (isFastConnectSupported && preferHighSpeed) {
+                val config = WifiP2pConfig.Builder()
+                    .setNetworkName(networkName)
+                    .setPassphrase(passphrase)
+                    .enablePersistentMode(false)
+                    .setGroupOperatingBand(WifiP2pConfig.GROUP_OWNER_BAND_5GHZ)
+                    .build()
+                mgr.createGroup(ch, config, listener)
+            } else {
+                // Pre-Q devices (or high-speed mode turned off): plain autonomous group,
+                // band is whatever the chipset/driver picks.
+                mgr.createGroup(ch, listener)
+            }
+        } catch (e: SecurityException) {
+            onResult(false, "Missing permission to create group")
+        } catch (e: IllegalArgumentException) {
+            // Some OEMs reject the network name/passphrase format - fall back to auto-generated credentials.
+            try {
+                mgr.createGroup(ch, listener)
+            } catch (e2: SecurityException) {
+                onResult(false, "Missing permission to create group")
+            }
+        }
+    }
+
+    /**
+     * CLIENT side of "high-speed mode": joins a group created by [createFastGroup] directly
+     * using the network name + passphrase carried in the QR code - no discovery/pairing
+     * dialog needed. Requires Android 10+; call [isFastConnectSupported] first.
+     */
+    @SuppressLint("MissingPermission")
+    fun joinFastGroup(networkName: String, passphrase: String, onResult: (Boolean, String) -> Unit) {
+        val mgr = manager ?: return onResult(false, "Wi-Fi Direct not supported")
+        val ch = channel ?: return onResult(false, "Not initialized")
+        if (!isFastConnectSupported) {
+            return onResult(false, "High-speed mode needs Android 10 or newer")
+        }
+        val config = WifiP2pConfig.Builder()
+            .setNetworkName(networkName)
+            .setPassphrase(passphrase)
+            .build()
+        try {
+            mgr.connect(ch, config, object : WifiP2pManager.ActionListener {
+                override fun onSuccess() {
+                    onResult(true, "Connecting\u2026")
+                }
+
+                override fun onFailure(reason: Int) {
+                    onResult(false, "Connection failed (code $reason)")
+                }
+            })
+        } catch (e: SecurityException) {
+            onResult(false, "Missing permission to connect")
+        }
+    }
+
+    fun stopGroup() {
+        val mgr = manager ?: return
+        val ch = channel ?: return
+        try { mgr.removeGroup(ch, null) } catch (_: Exception) {}
+        _groupInfo.value = null
     }
 }

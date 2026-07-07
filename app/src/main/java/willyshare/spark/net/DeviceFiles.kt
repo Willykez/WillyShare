@@ -64,7 +64,7 @@ object DeviceFiles {
                 val nameCol = cursor.getColumnIndexOrThrow(MediaStore.Files.FileColumns.DISPLAY_NAME)
                 val sizeCol = cursor.getColumnIndexOrThrow(MediaStore.Files.FileColumns.SIZE)
                 val mimeCol = cursor.getColumnIndexOrThrow(MediaStore.Files.FileColumns.MIME_TYPE)
-                val dateCol = cursor.getColumnIndexOrThrow(MediaStore.Files.FileColumns.DATE_MODIFIED)
+                val dateCol = cursor.getColumnIndex(MediaStore.Files.FileColumns.DATE_MODIFIED)
                 while (cursor.moveToNext()) {
                     val mime = cursor.getString(mimeCol) ?: ""
                     if (docMimePrefixes.none { mime.startsWith(it) } && mime.isNotBlank()) continue
@@ -72,12 +72,13 @@ object DeviceFiles {
                     val name = cursor.getString(nameCol) ?: continue
                     val size = cursor.getLong(sizeCol)
                     if (size <= 0) continue
+                    val dateModified = if (dateCol >= 0) cursor.getLong(dateCol) * 1000L else 0L
                     val uri = Uri.withAppendedPath(collection, id.toString())
                     results.add(
                         FileItemEntity(
                             id = "doc_$id", name = name, category = "Documents",
                             sizeBytes = size, iconEmoji = iconForDoc(name), uri = uri.toString(),
-                            dateModifiedSeconds = cursor.getLong(dateCol)
+                            dateModifiedMs = dateModified
                         )
                     )
                 }
@@ -108,7 +109,7 @@ object DeviceFiles {
                         sizeBytes = apkFile.length(),
                         iconEmoji = "\uD83D\uDCE6",
                         uri = Uri.fromFile(apkFile).toString(),
-                        dateModifiedSeconds = apkFile.lastModified() / 1000
+                        dateModifiedMs = apkFile.lastModified()
                     )
                 )
             }
@@ -142,18 +143,19 @@ object DeviceFiles {
                 val idCol = cursor.getColumnIndexOrThrow(MediaStore.MediaColumns._ID)
                 val nameCol = cursor.getColumnIndexOrThrow(MediaStore.MediaColumns.DISPLAY_NAME)
                 val sizeCol = cursor.getColumnIndexOrThrow(MediaStore.MediaColumns.SIZE)
-                val dateCol = cursor.getColumnIndexOrThrow(MediaStore.MediaColumns.DATE_MODIFIED)
+                val dateCol = cursor.getColumnIndex(MediaStore.MediaColumns.DATE_MODIFIED)
                 while (cursor.moveToNext()) {
                     val id = cursor.getLong(idCol)
                     val name = cursor.getString(nameCol) ?: continue
                     val size = cursor.getLong(sizeCol)
                     if (size <= 0) continue
+                    val dateModified = if (dateCol >= 0) cursor.getLong(dateCol) * 1000L else 0L
                     val uri = Uri.withAppendedPath(collection, id.toString())
                     results.add(
                         FileItemEntity(
                             id = "${category}_$id", name = name, category = category,
                             sizeBytes = size, iconEmoji = emoji, uri = uri.toString(),
-                            dateModifiedSeconds = cursor.getLong(dateCol)
+                            dateModifiedMs = dateModified
                         )
                     )
                 }
