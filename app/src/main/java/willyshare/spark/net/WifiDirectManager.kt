@@ -145,10 +145,25 @@ class WifiDirectManager(private val context: Context) {
     fun connect(device: WifiP2pDevice, onResult: (Boolean, String) -> Unit) {
         val mgr = manager ?: return onResult(false, "Wi-Fi Direct not supported")
         val ch = channel ?: return onResult(false, "Not initialized")
-        val config = WifiP2pConfig().apply {
-            deviceAddress = device.deviceAddress
-            wps.setup = WpsInfo.PBC
+
+        // Android 10+ lets us hint a 5GHz group-owner band, which is the single biggest
+        // lever for real-world throughput - Wi-Fi Direct silently falls back to 2.4GHz
+        // otherwise on most chipsets. Below API 29 there's no such knob; WPS PBC is all
+        // we get, and the OS/chipset picks the band on its own.
+        val config = if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.Q) {
+            WifiP2pConfig.Builder()
+                .setDeviceAddress(android.net.MacAddress.fromString(device.deviceAddress))
+                .setGroupOwnerIntent(15) // Max intent: prefer becoming GO so *we* control the band.
+                .enablePersistentMode(false)
+                .setGroupOwnerBand(WifiP2pConfig.GROUP_OWNER_BAND_5GHZ)
+                .build()
+        } else {
+            WifiP2pConfig().apply {
+                deviceAddress = device.deviceAddress
+                wps.setup = WpsInfo.PBC
+            }
         }
+
         try {
             mgr.connect(ch, config, object : WifiP2pManager.ActionListener {
                 override fun onSuccess() {
@@ -161,6 +176,26 @@ class WifiDirectManager(private val context: Context) {
             })
         } catch (e: SecurityException) {
             onResult(false, "Missing permission to connect")
+        } catch (e: Exception) {
+            // Some OEM stacks reject the 5GHz-band builder config outright (rare, but seen on
+            // a handful of chipsets); retry once with the plain WPS config as a safe fallback.
+            val fallback = WifiP2pConfig().apply {
+                deviceAddress = device.deviceAddress
+                wps.setup = WpsInfo.PBC
+            }
+            try {
+                mgr.connect(ch, fallback, object : WifiP2pManager.ActionListener {
+                    override fun onSuccess() {
+                        onResult(true, "Connecting to ${device.deviceName}\u2026")
+                    }
+
+                    override fun onFailure(reason: Int) {
+                        onResult(false, "Connection failed (code $reason)")
+                    }
+                })
+            } catch (e2: SecurityException) {
+                onResult(false, "Missing permission to connect")
+            }
         }
     }
 

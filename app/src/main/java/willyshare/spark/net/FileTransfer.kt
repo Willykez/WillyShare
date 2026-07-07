@@ -25,7 +25,7 @@ import java.util.concurrent.atomic.AtomicLong
 const val TRANSFER_PORT = 8988
 const val PARALLEL_STREAMS = 3
 private const val CHUNK_SIZE = 4 * 1024 * 1024
-private const val SOCKET_BUF = 1 shl 20
+private const val SOCKET_BUF = 4 * 1024 * 1024
 private const val PROGRESS_THROTTLE_MS = 120L
 
 data class SendableFile(
@@ -152,6 +152,7 @@ class FileReceiveServer(private val targetProvider: () -> ReceiveTarget) {
             try {
                 val server = ServerSocketChannel.open()
                 server.socket().reuseAddress = true
+                server.socket().receiveBufferSize = SOCKET_BUF
                 server.socket().bind(InetSocketAddress(TRANSFER_PORT))
                 serverChannel = server
                 _isListening.value = true
@@ -296,10 +297,12 @@ class FileSenderClient(private val context: Context) {
 
     private fun sendGroup(hostIp: String, totalCount: Int, files: List<SendableFile>, senderDeviceName: String): Boolean {
         return try {
-            SocketChannel.open(InetSocketAddress(hostIp, TRANSFER_PORT)).use { channel ->
+            SocketChannel.open().use { channel ->
                 val socket = channel.socket()
                 socket.tcpNoDelay = true
                 socket.sendBufferSize = SOCKET_BUF
+                socket.receiveBufferSize = SOCKET_BUF
+                channel.connect(InetSocketAddress(hostIp, TRANSFER_PORT))
                 val dout = DataOutputStream(java.io.BufferedOutputStream(socket.getOutputStream(), 64 * 1024))
                 val deviceNameBytes = senderDeviceName.take(120).toByteArray(StandardCharsets.UTF_8)
                 dout.writeInt(deviceNameBytes.size)
