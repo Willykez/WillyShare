@@ -155,6 +155,8 @@ class WifiDirectManager(private val context: Context) {
         val config = WifiP2pConfig().apply {
             deviceAddress = device.deviceAddress
             wps.setup = WpsInfo.PBC
+            // 0 means least inclination to be the Group Owner (Client)
+            groupOwnerIntent = 0 
         }
         try {
             mgr.connect(ch, config, object : WifiP2pManager.ActionListener {
@@ -210,12 +212,18 @@ class WifiDirectManager(private val context: Context) {
 
         try {
             if (isFastConnectSupported && preferHighSpeed) {
+                // 1. Build the configuration first
                 val config = WifiP2pConfig.Builder()
                     .setNetworkName(networkName)
                     .setPassphrase(passphrase)
                     .enablePersistentMode(false)
                     .setGroupOperatingBand(WifiP2pConfig.GROUP_OWNER_BAND_5GHZ)
                     .build()
+                
+                // 2. Set the group owner intent directly on the resulting config object
+                // 15 means highest inclination to be the Group Owner (Host)
+                config.groupOwnerIntent = 15 
+
                 mgr.createGroup(ch, config, listener)
             } else {
                 // Pre-Q devices (or high-speed mode turned off): plain autonomous group,
@@ -246,10 +254,17 @@ class WifiDirectManager(private val context: Context) {
         if (!isFastConnectSupported) {
             return onResult(false, "High-speed mode needs Android 10 or newer")
         }
+        
+        // 1. Build the configuration first
         val config = WifiP2pConfig.Builder()
             .setNetworkName(networkName)
             .setPassphrase(passphrase)
             .build()
+            
+        // 2. Set the group owner intent directly on the resulting config object
+        // 0 means least inclination to be the Group Owner (Client)
+        config.groupOwnerIntent = 0
+
         try {
             mgr.connect(ch, config, object : WifiP2pManager.ActionListener {
                 override fun onSuccess() {
