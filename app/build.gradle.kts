@@ -104,7 +104,7 @@ dependencies {
   implementation(libs.androidx.documentfile)
   implementation(libs.material.kolor)
   implementation(libs.androidx.graphics.shapes)
-  // implementation(libs.coil.compose)
+  implementation(libs.coil.compose)
   // implementation(libs.converter.moshi)
   // implementation(libs.firebase.ai)
   // implementation(libs.firebase.appcheck.recaptcha)

@@ -1,7 +1,21 @@
 package willyshare.spark.ui.screens
 
 import android.Manifest
+import android.content.pm.PackageManager
+import android.graphics.Bitmap
+import android.graphics.Canvas
+import android.graphics.drawable.BitmapDrawable
+import android.graphics.drawable.Drawable
+import android.net.Uri
 import android.os.Build
+import android.provider.MediaStore
+import android.util.Size
+import androidx.compose.foundation.Image
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
+import coil.compose.AsyncImage
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
@@ -49,12 +63,15 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
@@ -452,6 +469,153 @@ fun SelectFilesScreen(
 
 private enum class SortOption { NAME, SIZE_LARGEST, NEWEST }
 
+/**
+ * Renders what the file actually looks like instead of a generic file-type icon:
+ * the real photo, an actual frame from the video, or the app's real launcher icon.
+ * Falls back to the icon treatment for file types that don't have a cheap-to-render
+ * preview (documents, generic files).
+ */
+@Composable
+private fun FileThumbnail(file: FileItemEntity, modifier: Modifier = Modifier, iconSize: androidx.compose.ui.unit.Dp = 36.dp) {
+    when (file.category) {
+        "Photos" -> {
+            AsyncImage(
+                model = Uri.parse(file.uri),
+                contentDescription = file.name,
+                contentScale = ContentScale.Crop,
+                modifier = modifier
+            )
+        }
+        "Videos" -> {
+            Box(modifier = modifier, contentAlignment = Alignment.Center) {
+                val thumb by rememberVideoThumbnail(Uri.parse(file.uri))
+                val bmp = thumb
+                if (bmp != null) {
+                    Image(
+                        bitmap = bmp.asImageBitmap(),
+                        contentDescription = file.name,
+                        contentScale = ContentScale.Crop,
+                        modifier = Modifier.fillMaxSize()
+                    )
+                    Box(
+                        modifier = Modifier
+                            .size(22.dp)
+                            .clip(CircleShape)
+                            .background(Color.Black.copy(alpha = 0.45f)),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(PlayArrow, contentDescription = null, tint = Color.White, modifier = Modifier.size(14.dp))
+                    }
+                } else {
+                    Icon(
+                        willyshare.spark.ui.PulseIcons.forBrowseCategory("Videos"),
+                        contentDescription = null,
+                        tint = SleekOnSurfaceVariant,
+                        modifier = Modifier.size(iconSize)
+                    )
+                }
+            }
+        }
+        "Apps" -> {
+            Box(modifier = modifier, contentAlignment = Alignment.Center) {
+                val icon by rememberAppIcon(file)
+                val bmp = icon
+                if (bmp != null) {
+                    Image(
+                        bitmap = bmp.asImageBitmap(),
+                        contentDescription = file.name,
+                        modifier = Modifier.fillMaxSize(0.75f)
+                    )
+                } else {
+                    Icon(
+                        willyshare.spark.ui.PulseIcons.forBrowseCategory("Apps"),
+                        contentDescription = null,
+                        tint = SleekOnSurfaceVariant,
+                        modifier = Modifier.size(iconSize)
+                    )
+                }
+            }
+        }
+        else -> {
+            val icon = if (file.category == "Documents") {
+                willyshare.spark.ui.PulseIcons.forFileName(file.name)
+            } else {
+                willyshare.spark.ui.PulseIcons.forBrowseCategory(file.category)
+            }
+            Box(modifier = modifier, contentAlignment = Alignment.Center) {
+                Icon(icon, contentDescription = null, tint = SleekOnSurfaceVariant, modifier = Modifier.size(iconSize))
+            }
+        }
+    }
+}
+
+/** Actual frame from the video, not a generic film icon - uses the same thumbnail API the system gallery uses. */
+@Composable
+private fun rememberVideoThumbnail(uri: Uri): androidx.compose.runtime.State<Bitmap?> {
+    val context = LocalContext.current
+    return produceState<Bitmap?>(initialValue = null, uri) {
+        value = withContext(Dispatchers.IO) {
+            try {
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                    context.contentResolver.loadThumbnail(uri, Size(256, 256), null)
+                } else {
+                    @Suppress("DEPRECATION")
+                    val id = uri.lastPathSegment?.toLongOrNull()
+                    if (id != null) {
+                        @Suppress("DEPRECATION")
+                        MediaStore.Video.Thumbnails.getThumbnail(
+                            context.contentResolver, id, MediaStore.Video.Thumbnails.MINI_KIND, null
+                        )
+                    } else null
+                }
+            } catch (_: Exception) {
+                null
+            }
+        }
+    }
+}
+
+/** The app's real launcher icon - for an installed app via PackageManager, or parsed straight
+ *  out of a standalone .apk file that isn't installed. */
+@Composable
+private fun rememberAppIcon(file: FileItemEntity): androidx.compose.runtime.State<Bitmap?> {
+    val context = LocalContext.current
+    return produceState<Bitmap?>(initialValue = null, file.id) {
+        value = withContext(Dispatchers.IO) {
+            try {
+                val pm = context.packageManager
+                val drawable: Drawable? = if (file.id.startsWith("app_")) {
+                    val pkg = file.id.removePrefix("app_")
+                    pm.getApplicationIcon(pkg)
+                } else {
+                    val path = Uri.parse(file.uri).path
+                    if (path != null) {
+                        @Suppress("DEPRECATION")
+                        val info = pm.getPackageArchiveInfo(path, 0)
+                        info?.applicationInfo?.let { appInfo ->
+                            appInfo.sourceDir = path
+                            appInfo.publicSourceDir = path
+                            appInfo.loadIcon(pm)
+                        }
+                    } else null
+                }
+                drawable?.let { drawableToBitmap(it) }
+            } catch (_: Exception) {
+                null
+            }
+        }
+    }
+}
+
+private fun drawableToBitmap(drawable: Drawable, size: Int = 128): Bitmap {
+    if (drawable is BitmapDrawable && drawable.bitmap != null) return drawable.bitmap
+    val bitmap = Bitmap.createBitmap(size, size, Bitmap.Config.ARGB_8888)
+    val canvas = Canvas(bitmap)
+    drawable.setBounds(0, 0, canvas.width, canvas.height)
+    drawable.draw(canvas)
+    return bitmap
+}
+
 @Composable
 fun FileListRowItem(
     file: FileItemEntity,
@@ -471,19 +635,13 @@ fun FileListRowItem(
             .padding(horizontal = 12.dp, vertical = 10.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
-        val icon = if (file.category == "Documents") {
-            willyshare.spark.ui.PulseIcons.forFileName(file.name)
-        } else {
-            willyshare.spark.ui.PulseIcons.forBrowseCategory(file.category)
-        }
         Box(
             modifier = Modifier
                 .size(40.dp)
                 .clip(RoundedCornerShape(10.dp))
-                .background(SleekSurfaceContainer),
-            contentAlignment = Alignment.Center
+                .background(SleekSurfaceContainer)
         ) {
-            Icon(icon, contentDescription = null, tint = SleekOnSurfaceVariant, modifier = Modifier.size(20.dp))
+            FileThumbnail(file, modifier = Modifier.fillMaxSize(), iconSize = 20.dp)
         }
         Spacer(modifier = Modifier.width(12.dp))
         Column(modifier = Modifier.weight(1f)) {
@@ -537,15 +695,17 @@ fun FileGridCardItem(
     ) {
         Column(
             modifier = Modifier.fillMaxSize(),
-            horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.Center
+            horizontalAlignment = Alignment.CenterHorizontally
         ) {
-            val icon = if (file.category == "Documents") {
-                willyshare.spark.ui.PulseIcons.forFileName(file.name)
-            } else {
-                willyshare.spark.ui.PulseIcons.forBrowseCategory(file.category)
+            Box(
+                modifier = Modifier
+                    .weight(1f)
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(10.dp))
+                    .background(SleekSurfaceContainer)
+            ) {
+                FileThumbnail(file, modifier = Modifier.fillMaxSize(), iconSize = 32.dp)
             }
-            Icon(icon, contentDescription = null, tint = SleekOnSurfaceVariant, modifier = Modifier.size(36.dp))
             Spacer(modifier = Modifier.height(6.dp))
             Text(
                 text = file.name,

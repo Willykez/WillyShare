@@ -1,7 +1,6 @@
 package willyshare.spark.net
 
 import android.content.Context
-import android.content.pm.ApplicationInfo
 import android.content.pm.PackageManager
 import android.net.Uri
 import android.provider.MediaStore
@@ -88,15 +87,27 @@ object DeviceFiles {
         return results
     }
 
-    /** User-installed (non-system) apps, resolved to their real APK path on disk. */
+    /**
+     * Every app worth sharing: installed apps (system or user, as long as they're
+     * launchable - that's what keeps this from turning into a 300-entry dump of background
+     * services and permission holders) PLUS standalone .apk files sitting anywhere on
+     * storage - internal, Downloads, an SD card - that aren't just the on-disk copy of
+     * something already listed above.
+     */
     fun queryApps(context: Context): List<FileItemEntity> {
         val pm = context.packageManager
         val results = mutableListOf<FileItemEntity>()
+        val installedPackages = mutableSetOf<String>()
+
         try {
+            @Suppress("DEPRECATION")
             val apps = pm.getInstalledApplications(PackageManager.GET_META_DATA)
             for (app in apps) {
-                val isSystemApp = (app.flags and ApplicationInfo.FLAG_SYSTEM) != 0
-                if (isSystemApp) continue
+                // A launcher entry is what makes an app something the user would actually
+                // recognize and want to share - Camera, Chrome, WhatsApp, games, etc. -
+                // rather than every background system service and permission holder.
+                if (pm.getLaunchIntentForPackage(app.packageName) == null) continue
+                installedPackages += app.packageName
                 val apkPath = app.publicSourceDir ?: continue
                 val apkFile = File(apkPath)
                 if (!apkFile.exists() || !apkFile.canRead()) continue
@@ -115,6 +126,88 @@ object DeviceFiles {
             }
         } catch (_: Exception) {
         }
+
+        // Standalone .apk files - Downloads, a chat app's media folder, an SD card - that
+        // aren't necessarily installed right now. Each storage volume (internal + any SD
+        // card) is queried separately so removable storage isn't silently skipped.
+        val volumeUris: List<Uri> = try {
+            if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.Q) {
+                MediaStore.getExternalVolumeNames(context).map { MediaStore.Files.getContentUri(it) }
+            } else {
+                listOf(MediaStore.Files.getContentUri("external"))
+            }
+        } catch (_: Exception) {
+            listOf(MediaStore.Files.getContentUri("external"))
+        }
+
+        val seenApkIds = mutableSetOf<String>()
+        for (collection in volumeUris) {
+            try {
+                val projection = arrayOf(
+                    MediaStore.Files.FileColumns._ID,
+                    MediaStore.Files.FileColumns.DISPLAY_NAME,
+                    MediaStore.Files.FileColumns.SIZE,
+                    MediaStore.Files.FileColumns.DATA,
+                    MediaStore.Files.FileColumns.DATE_MODIFIED
+                )
+                context.contentResolver.query(
+                    collection, projection,
+                    "${MediaStore.Files.FileColumns.DISPLAY_NAME} LIKE ?", arrayOf("%.apk"),
+                    "${MediaStore.Files.FileColumns.DATE_MODIFIED} DESC"
+                )?.use { cursor ->
+                    val idCol = cursor.getColumnIndexOrThrow(MediaStore.Files.FileColumns._ID)
+                    val nameCol = cursor.getColumnIndexOrThrow(MediaStore.Files.FileColumns.DISPLAY_NAME)
+                    val sizeCol = cursor.getColumnIndexOrThrow(MediaStore.Files.FileColumns.SIZE)
+                    val dataCol = cursor.getColumnIndex(MediaStore.Files.FileColumns.DATA)
+                    val dateCol = cursor.getColumnIndex(MediaStore.Files.FileColumns.DATE_MODIFIED)
+                    while (cursor.moveToNext()) {
+                        val name = cursor.getString(nameCol) ?: continue
+                        if (!name.endsWith(".apk", ignoreCase = true)) continue
+                        val size = cursor.getLong(sizeCol)
+                        if (size <= 0) continue
+                        val id = cursor.getLong(idCol)
+                        val dedupeKey = "${collection}_$id"
+                        if (!seenApkIds.add(dedupeKey)) continue
+                        val path = if (dataCol >= 0) cursor.getString(dataCol) else null
+                        val dateModified = if (dateCol >= 0) cursor.getLong(dateCol) * 1000L else 0L
+
+                        var displayLabel = name.removeSuffix(".apk")
+                        var alreadyInstalled = false
+                        if (path != null) {
+                            try {
+                                @Suppress("DEPRECATION")
+                                val info = pm.getPackageArchiveInfo(path, 0)
+                                if (info != null) {
+                                    if (installedPackages.contains(info.packageName)) alreadyInstalled = true
+                                    info.applicationInfo?.let { appInfo ->
+                                        appInfo.sourceDir = path
+                                        appInfo.publicSourceDir = path
+                                        displayLabel = pm.getApplicationLabel(appInfo).toString()
+                                    }
+                                }
+                            } catch (_: Exception) {
+                            }
+                        }
+                        if (alreadyInstalled) continue
+
+                        val uri = if (path != null) Uri.fromFile(File(path)) else Uri.withAppendedPath(collection, id.toString())
+                        results.add(
+                            FileItemEntity(
+                                id = "apk_$dedupeKey",
+                                name = "$displayLabel.apk",
+                                category = "Apps",
+                                sizeBytes = size,
+                                iconEmoji = "\uD83D\uDCE6",
+                                uri = uri.toString(),
+                                dateModifiedMs = dateModified
+                            )
+                        )
+                    }
+                }
+            } catch (_: Exception) {
+            }
+        }
+
         return results
     }
 
