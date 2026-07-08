@@ -174,7 +174,7 @@ fun AppearanceSection(
                     )
                 }
             }
-            GroupedListItem(position = GroupPosition.MIDDLE) {
+            GroupedListItem(position = GroupPosition.LAST) {
                 AppearanceSettingsToggleItem(
                     title = "Gradient background",
                     subtitle = "Soft accent wash behind screens",
@@ -187,14 +187,6 @@ fun AppearanceSection(
                         }
                     },
                     onCheckedChange = { scope.launch { prefs.setUseGradient(it) } },
-                )
-            }
-            GroupedListItem(position = GroupPosition.LAST) {
-                AppearanceSettingsToggleItem(
-                    title = "Blur bars",
-                    subtitle = "Frosted-glass effect for the nav bar and top bar",
-                    checked = state.blurBars,
-                    onCheckedChange = { scope.launch { prefs.setBlurBars(it) } },
                 )
             }
         }

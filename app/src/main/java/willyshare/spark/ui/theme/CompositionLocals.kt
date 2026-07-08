@@ -9,7 +9,6 @@ val LocalSnackbarHostState = staticCompositionLocalOf<SnackbarHostState> { error
 
 val LocalUseGradient = compositionLocalOf { false }
 
-val LocalBlurBars = compositionLocalOf { true }
 
 val LocalUseEnhancedShading = compositionLocalOf { false }
 

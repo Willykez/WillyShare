@@ -88,7 +88,6 @@ fun MyApplicationTheme(
         LocalSleekPalette provides sleekPalette,
         LocalIsDark provides darkTheme,
         LocalUseGradient provides effectiveUseGradient,
-        LocalBlurBars provides themeState.blurBars,
         LocalUseEnhancedShading provides themeState.useEnhancedShading,
         LocalThemeState provides themeState,
         LocalReducedMotion provides reducedMotion,

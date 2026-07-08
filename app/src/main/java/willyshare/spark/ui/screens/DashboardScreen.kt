@@ -46,7 +46,6 @@ import willyshare.spark.ui.PulseViewModel
 import willyshare.spark.ui.SleekBottomNav
 import willyshare.spark.ui.formatBytes
 import willyshare.spark.ui.groupPositionFor
-import willyshare.spark.ui.modifiers.rememberBottomEdgeBlurModifier
 import willyshare.spark.ui.theme.BlueThumb
 import willyshare.spark.ui.theme.CyanBright
 import willyshare.spark.ui.theme.SleekBg
@@ -76,6 +75,8 @@ fun DashboardScreen(
 ) {
     val transfers by viewModel.transfers.collectAsState()
     val deviceName by viewModel.thisDeviceName.collectAsState()
+    val linkState by viewModel.linkState.collectAsState()
+    val targetName by viewModel.targetName.collectAsState()
     val totalBytes = transfers.sumOf { it.sizeBytes }
     val sentCount = transfers.count { it.isSend }
     val receivedCount = transfers.count { !it.isSend }
@@ -96,11 +97,20 @@ fun DashboardScreen(
             LazyColumn(
                 modifier = Modifier
                     .fillMaxSize()
-                    .then(rememberBottomEdgeBlurModifier(scrimColor = SleekBg))
                     .padding(bottom = innerPadding.calculateBottomPadding())
                     .padding(horizontal = 20.dp),
                 verticalArrangement = Arrangement.spacedBy(24.dp)
             ) {
+                if (linkState != willyshare.spark.ui.LinkState.IDLE) {
+                    item {
+                        Spacer(modifier = Modifier.height(4.dp))
+                        ConnectionStatusBanner(
+                            linkState = linkState,
+                            peerName = targetName,
+                            onDisconnect = { viewModel.resetConnection() }
+                        )
+                    }
+                }
                 item {
                     Spacer(modifier = Modifier.height(4.dp))
                     DeviceSummaryCard(
@@ -394,5 +404,58 @@ fun TransferItemRow(
         IconButton(onClick = onDelete, modifier = Modifier.size(32.dp)) {
             Icon(Icons.Default.Delete, contentDescription = "Delete", tint = SleekOnSurfaceVariant.copy(alpha = 0.6f), modifier = Modifier.size(18.dp))
         }
+    }
+}
+
+/**
+ * The real "panic button" for a stuck or active connection - reachable from Home no matter
+ * which screen originally created the connection (Send, Receive, QR, whatever). Previously
+ * there was no way to back out of a half-formed pairing short of restarting the app.
+ */
+@Composable
+private fun ConnectionStatusBanner(
+    linkState: willyshare.spark.ui.LinkState,
+    peerName: String?,
+    onDisconnect: () -> Unit
+) {
+    val label = when (linkState) {
+        willyshare.spark.ui.LinkState.TRANSFERRING -> "Transferring with ${peerName ?: "a nearby device"}"
+        willyshare.spark.ui.LinkState.CONNECTED -> "Connected to ${peerName ?: "a nearby device"}"
+        willyshare.spark.ui.LinkState.IDLE -> ""
+    }
+    val dotColor = if (linkState == willyshare.spark.ui.LinkState.TRANSFERRING) SleekPrimary else Color(0xFF2E7D32)
+
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(androidx.compose.foundation.shape.RoundedCornerShape(16.dp))
+            .background(SleekSurfaceContainer)
+            .border(1.dp, SleekOutline.copy(alpha = 0.35f), androidx.compose.foundation.shape.RoundedCornerShape(16.dp))
+            .padding(horizontal = 16.dp, vertical = 12.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Box(
+            modifier = Modifier
+                .size(9.dp)
+                .clip(CircleShape)
+                .background(dotColor)
+        )
+        Spacer(modifier = Modifier.width(10.dp))
+        Text(
+            text = label,
+            fontSize = 13.sp,
+            fontWeight = FontWeight.SemiBold,
+            color = SleekOnSurface,
+            modifier = Modifier.weight(1f),
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis
+        )
+        Text(
+            text = "Disconnect",
+            fontSize = 13.sp,
+            fontWeight = FontWeight.Bold,
+            color = Color(0xFFD32F2F),
+            modifier = Modifier.clickable { onDisconnect() }.padding(start = 8.dp)
+        )
     }
 }

@@ -79,13 +79,14 @@ fun ReceiveScreen(viewModel: PulseViewModel, onNavigate: (String) -> Unit) {
     LaunchedEffect(Unit) {
         if (!permissionsState.allPermissionsGranted) permissionsState.launchMultiplePermissionRequest()
         viewModel.refreshMyQrPayload()
-        viewModel.startReceiving()
+        // Receiving itself is started once, app-wide, in the ViewModel's init{} - it no
+        // longer needs (or should) start/stop with this screen's lifecycle.
     }
     LaunchedEffect(permissionsState.allPermissionsGranted) {
         if (permissionsState.allPermissionsGranted) viewModel.startPeerDiscovery()
     }
     DisposableEffect(Unit) {
-        onDispose { viewModel.stopReceiving(); viewModel.stopPeerDiscovery() }
+        onDispose { viewModel.stopPeerDiscovery() }
     }
 
     Scaffold(

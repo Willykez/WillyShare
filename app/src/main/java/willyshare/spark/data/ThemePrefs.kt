@@ -55,7 +55,6 @@ data class ThemeState(
     val activeCustomSeed: String = "",
     val useGradient: Boolean = true,
     val shadingIntensity: Float = DEFAULT_SHADING_INTENSITY,
-    val blurBars: Boolean = true,
 ) {
     val useEnhancedShading: Boolean
         get() = shadingIntensity > 0.0f
@@ -72,7 +71,6 @@ class ThemePrefs(
         val ACTIVE_CUSTOM_SEED = stringPreferencesKey("active_custom_seed")
         val USE_GRADIENT = booleanPreferencesKey("use_gradient")
         val SHADING_INTENSITY_FACTOR = floatPreferencesKey("shading_intensity_factor")
-        val BLUR_BARS = booleanPreferencesKey("blur_bars")
     }
 
     val state: Flow<ThemeState> =
@@ -91,7 +89,6 @@ class ThemePrefs(
                 activeCustomSeed = normalizeCustomSeed(p[Keys.ACTIVE_CUSTOM_SEED].orEmpty()).orEmpty(),
                 useGradient = p[Keys.USE_GRADIENT] ?: true,
                 shadingIntensity = p[Keys.SHADING_INTENSITY_FACTOR] ?: DEFAULT_SHADING_INTENSITY,
-                blurBars = p[Keys.BLUR_BARS] ?: true,
             )
         }
 
@@ -155,10 +152,6 @@ class ThemePrefs(
 
     suspend fun setShadingIntensity(intensity: Float) {
         context.themePrefsDataStore.edit { it[Keys.SHADING_INTENSITY_FACTOR] = intensity }
-    }
-
-    suspend fun setBlurBars(value: Boolean) {
-        context.themePrefsDataStore.edit { it[Keys.BLUR_BARS] = value }
     }
 
     suspend fun reset() {

@@ -30,6 +30,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -38,6 +39,14 @@ import java.util.UUID
 
 /** How the current outgoing transfer's target was resolved. */
 enum class TargetSource { WIFI_DIRECT, QR_PAIR, NONE }
+
+/**
+ * Single, unified "what's going on right now" signal - replaces having to separately check
+ * targetSource / hostHasPeer / senderConnected / progress in every screen to answer the
+ * same question. This is step one of the state-machine work; screens can adopt it
+ * incrementally.
+ */
+enum class LinkState { IDLE, CONNECTED, TRANSFERRING }
 
 class PulseViewModel(application: Application) : AndroidViewModel(application) {
     private val dao = PulseDatabase.getDatabase(application).pulseDao()
@@ -131,15 +140,39 @@ class PulseViewModel(application: Application) : AndroidViewModel(application) {
     val fastConnectStatus = MutableStateFlow<String?>(null)
     val isFastConnectSupported: Boolean get() = wifiDirect.isFastConnectSupported
 
+    /** One combined signal for "what's going on right now," usable from any screen. */
+    val linkState: StateFlow<LinkState> = combine(
+        targetSource, wifiDirect.hostHasPeer, fileReceiver.senderConnected, sendProgress, receiveProgress
+    ) { source, hostPeer, senderConn, sendP, recvP ->
+        when {
+            (sendP.overallTotal > 0 && !sendP.isComplete) || (recvP.overallTotal > 0 && !recvP.isComplete) ->
+                LinkState.TRANSFERRING
+            source != TargetSource.NONE || hostPeer || senderConn -> LinkState.CONNECTED
+            else -> LinkState.IDLE
+        }
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), LinkState.IDLE)
+
     init {
         wifiDirect.start()
         viewModelScope.launch {
             wifiDirect.connectionInfo.collect { info ->
-                if (info != null && info.groupFormed && info.groupOwnerAddress != null) {
+                // CLIENT side only: "groupFormed" also fires the instant a HOST forms its
+                // own solo group (zero peers yet) - that used to be misread as "connected"
+                // the moment the QR screen opened. Only trust this signal when we are
+                // definitely the joining client of someone else's group.
+                if (info != null && info.groupFormed && !info.isGroupOwner && info.groupOwnerAddress != null) {
                     targetIp.value = info.groupOwnerAddress.hostAddress
                     targetPort.value = TRANSFER_PORT
                     targetSource.value = TargetSource.WIFI_DIRECT
                     NotificationHelper.notifyConnectionStatus(appContext, connected = true, deviceName = targetName.value)
+                }
+            }
+        }
+        viewModelScope.launch {
+            // HOST side: only a real, non-empty client list counts as "someone connected."
+            wifiDirect.hostHasPeer.collect { hasPeer ->
+                if (hasPeer) {
+                    NotificationHelper.notifyConnectionStatus(appContext, connected = true, deviceName = "Nearby device")
                 }
             }
         }
@@ -162,6 +195,10 @@ class PulseViewModel(application: Application) : AndroidViewModel(application) {
                 }
             }
         }
+        // Receiving is now always-on for the lifetime of the app process, independent of
+        // which screen is open - matches how Xender/Quick Share stay reachable in the
+        // background instead of only listening while a specific screen is on top.
+        startReceiving()
         refreshMyQrPayload()
     }
 
@@ -170,6 +207,29 @@ class PulseViewModel(application: Application) : AndroidViewModel(application) {
         wifiDirect.stop()
         fileReceiver.stop()
         SparkTransferService.stopIfIdle(appContext)
+    }
+
+    /**
+     * The one "panic button" reset: tears down whatever connection/pairing state exists
+     * (Wi-Fi Direct group or client link, any in-flight send) and returns everything to a
+     * clean idle state. This is what was missing before - a failed/half-formed connection
+     * used to just linger forever with no way to back out of it short of restarting the app.
+     */
+    fun resetConnection() {
+        transferJob?.cancel()
+        transferJob = null
+        wifiDirect.stopDiscovery()
+        wifiDirect.disconnect()
+        wifiDirect.stopGroup()
+        targetIp.value = null
+        targetName.value = null
+        targetSource.value = TargetSource.NONE
+        fastConnectStatus.value = null
+        // NOTE: deliberately not calling SparkTransferService.stopIfIdle() here - receiving
+        // is always-on now, so the foreground service must keep running regardless of a
+        // send/pairing attempt being reset. It only ever stops in onCleared()/stopReceiving().
+        // Receiving itself stays on (it's always-on now) - this only clears an in-progress
+        // or stuck pairing/send attempt, not the "am I reachable at all" state.
     }
 
     // ---------- Device file browsing (real MediaStore, no seeded data) ----------
@@ -297,32 +357,31 @@ class PulseViewModel(application: Application) : AndroidViewModel(application) {
     /** Called on the Receive screen: builds this device's own pairing QR content. */
     fun refreshMyQrPayload() {
         val ip = NetworkUtils.getLocalIpAddress()
-        if (highSpeedMode.value && wifiDirect.isFastConnectSupported) {
-            val suffix = UUID.randomUUID().toString().take(4).uppercase()
-            val networkName = "DIRECT-sk-Sparks$suffix"
-            val passphrase = UUID.randomUUID().toString().replace("-", "").take(12)
-            wifiDirect.createFastGroup(networkName, passphrase, preferHighSpeed = true) { success, message ->
-                fastConnectStatus.value = message
-                myQrPayload.value = when {
-                    success -> QrPairing.buildFastConnectPayload(
-                        wifiDirect.thisDeviceName.value, ip ?: "0.0.0.0", TRANSFER_PORT, networkName, passphrase
-                    )
-                    ip != null -> QrPairing.buildPayload(wifiDirect.thisDeviceName.value, ip, TRANSFER_PORT)
-                    else -> null
-                }
+        val suffix = UUID.randomUUID().toString().take(4).uppercase()
+        val networkName = "DIRECT-sk-Sparks$suffix"
+        val passphrase = UUID.randomUUID().toString().replace("-", "").take(12)
+        // Wi-Fi Direct group creation works on every Android version via the plain
+        // (non-band-forced) overload - it's the reliable primary path now, not gated
+        // behind "High-speed Mode" or an existing shared Wi-Fi network. The old code only
+        // fell back to sharing this device's regular Wi-Fi IP, which is null for anyone
+        // who isn't already on a router (i.e. most people who actually need this app).
+        wifiDirect.createFastGroup(networkName, passphrase, preferHighSpeed = highSpeedMode.value) { success, message ->
+            fastConnectStatus.value = message
+            myQrPayload.value = when {
+                success -> QrPairing.buildFastConnectPayload(
+                    wifiDirect.thisDeviceName.value, ip ?: "0.0.0.0", TRANSFER_PORT, networkName, passphrase
+                )
+                ip != null -> QrPairing.buildPayload(wifiDirect.thisDeviceName.value, ip, TRANSFER_PORT)
+                else -> null
             }
-        } else {
-            fastConnectStatus.value = null
-            myQrPayload.value = if (ip != null) {
-                QrPairing.buildPayload(wifiDirect.thisDeviceName.value, ip, TRANSFER_PORT)
-            } else null
         }
     }
 
     fun setHighSpeedMode(enabled: Boolean) {
         if (highSpeedMode.value == enabled) return
         highSpeedMode.value = enabled
-        if (!enabled) wifiDirect.stopGroup()
+        // The group itself stays up either way now - only the band preference changes -
+        // so just recreate it with the new preference instead of tearing pairing down.
         refreshMyQrPayload()
     }
 
@@ -453,7 +512,9 @@ class PulseViewModel(application: Application) : AndroidViewModel(application) {
             } catch (t: Throwable) {
                 success = false
             } finally {
-                SparkTransferService.stopIfIdle(appContext)
+                // Deliberately not stopping the service here - it's the same always-on
+                // foreground service keeping receiving alive; a finished/failed send must
+                // not tear that down.
                 transferJob = null
                 onComplete(success)
             }
@@ -464,7 +525,7 @@ class PulseViewModel(application: Application) : AndroidViewModel(application) {
     fun cancelTransferSession() {
         transferJob?.cancel()
         transferJob = null
-        SparkTransferService.stopIfIdle(appContext)
+        // Not stopping the service - same reasoning as above, receiving stays up.
     }
 
     // ---------- Files shared into Sparks from another app (Gallery, Files, etc.) ----------

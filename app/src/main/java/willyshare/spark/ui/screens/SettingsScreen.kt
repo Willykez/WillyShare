@@ -122,7 +122,6 @@ fun SettingsScreen(
             LazyColumn(
                 modifier = Modifier
                     .fillMaxSize()
-                    .then(willyshare.spark.ui.modifiers.rememberBottomEdgeBlurModifier(scrimColor = SleekBg))
                     .padding(bottom = innerPadding.calculateBottomPadding())
                     .padding(horizontal = 20.dp),
                 verticalArrangement = Arrangement.spacedBy(24.dp)

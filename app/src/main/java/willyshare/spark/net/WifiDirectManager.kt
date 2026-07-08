@@ -49,6 +49,28 @@ class WifiDirectManager(private val context: Context) {
     private val _groupInfo = MutableStateFlow<WifiP2pGroup?>(null)
     val groupInfo: StateFlow<WifiP2pGroup?> = _groupInfo.asStateFlow()
 
+    /**
+     * True only once a *real* peer has joined our self-created group - i.e. this device is
+     * the group owner AND the group's client list is non-empty. Forming the group by
+     * yourself (host with zero clients) must never read as "connected"; that was the source
+     * of the false-positive "Connected" notification firing the instant the QR was shown,
+     * before any sender had actually joined.
+     */
+    private val _hostHasPeer = MutableStateFlow(false)
+    val hostHasPeer: StateFlow<Boolean> = _hostHasPeer.asStateFlow()
+
+    private fun refreshGroupInfo() {
+        val mgr = manager ?: return
+        val ch = channel ?: return
+        try {
+            mgr.requestGroupInfo(ch) { group ->
+                _groupInfo.value = group
+                _hostHasPeer.value = group?.isGroupOwner == true && group.clientList.isNotEmpty()
+            }
+        } catch (_: SecurityException) {
+        }
+    }
+
     val isFastConnectSupported: Boolean get() = Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q
 
     val isSupported: Boolean get() = manager != null
@@ -88,6 +110,10 @@ class WifiDirectManager(private val context: Context) {
                         val ch = channel ?: return
                         try {
                             mgr.requestConnectionInfo(ch) { info -> _connectionInfo.value = info }
+                            mgr.requestGroupInfo(ch) { group ->
+                                _groupInfo.value = group
+                                _hostHasPeer.value = group?.isGroupOwner == true && group.clientList.isNotEmpty()
+                            }
                         } catch (_: SecurityException) {
                         }
                     }
@@ -182,6 +208,7 @@ class WifiDirectManager(private val context: Context) {
         }
         _connectionInfo.value = null
         _groupInfo.value = null
+        _hostHasPeer.value = false
     }
 
     /**
@@ -195,47 +222,59 @@ class WifiDirectManager(private val context: Context) {
     fun createFastGroup(networkName: String, passphrase: String, preferHighSpeed: Boolean, onResult: (Boolean, String) -> Unit) {
         val mgr = manager ?: return onResult(false, "Wi-Fi Direct not supported")
         val ch = channel ?: return onResult(false, "Not initialized")
+        _hostHasPeer.value = false
 
-        val listener = object : WifiP2pManager.ActionListener {
+        val plainListener = object : WifiP2pManager.ActionListener {
             override fun onSuccess() {
-                try {
-                    mgr.requestGroupInfo(ch) { group -> _groupInfo.value = group }
-                } catch (_: SecurityException) {
-                }
-                onResult(true, if (preferHighSpeed && isFastConnectSupported) "Group created (5GHz)" else "Group created")
+                refreshGroupInfo()
+                onResult(true, "Group created")
             }
-
             override fun onFailure(reason: Int) {
                 onResult(false, "Group creation failed (code $reason)")
             }
         }
 
+        val fastListener = object : WifiP2pManager.ActionListener {
+            override fun onSuccess() {
+                refreshGroupInfo()
+                onResult(true, "Group created (5GHz)")
+            }
+
+            override fun onFailure(reason: Int) {
+                // Common on budget/Go-edition chipsets: the OS rejects a forced 5GHz group.
+                // Don't just give up - a normal (auto-band) group still works fine.
+                try {
+                    mgr.createGroup(ch, plainListener)
+                } catch (e2: SecurityException) {
+                    onResult(false, "Missing permission to create group")
+                }
+            }
+        }
+
         try {
             if (isFastConnectSupported && preferHighSpeed) {
-                // 1. Build the configuration first
                 val config = WifiP2pConfig.Builder()
                     .setNetworkName(networkName)
                     .setPassphrase(passphrase)
                     .enablePersistentMode(false)
                     .setGroupOperatingBand(WifiP2pConfig.GROUP_OWNER_BAND_5GHZ)
                     .build()
-                
-                // 2. Set the group owner intent directly on the resulting config object
-                // 15 means highest inclination to be the Group Owner (Host)
-                config.groupOwnerIntent = 15 
-
-                mgr.createGroup(ch, config, listener)
+                config.groupOwnerIntent = 15
+                mgr.createGroup(ch, config, fastListener)
             } else {
                 // Pre-Q devices (or high-speed mode turned off): plain autonomous group,
-                // band is whatever the chipset/driver picks.
-                mgr.createGroup(ch, listener)
+                // band is whatever the chipset/driver picks. This is always available on
+                // every Android version - it's the reliable baseline, not a fallback of
+                // last resort, since it doesn't depend on already being on some Wi-Fi network.
+                mgr.createGroup(ch, plainListener)
             }
         } catch (e: SecurityException) {
             onResult(false, "Missing permission to create group")
         } catch (e: IllegalArgumentException) {
-            // Some OEMs reject the network name/passphrase format - fall back to auto-generated credentials.
+            // Some OEMs reject the network name/passphrase format outright - fall back to
+            // auto-generated credentials via the plain (no explicit config) overload.
             try {
-                mgr.createGroup(ch, listener)
+                mgr.createGroup(ch, plainListener)
             } catch (e2: SecurityException) {
                 onResult(false, "Missing permission to create group")
             }
@@ -285,5 +324,6 @@ class WifiDirectManager(private val context: Context) {
         val ch = channel ?: return
         try { mgr.removeGroup(ch, null) } catch (_: Exception) {}
         _groupInfo.value = null
+        _hostHasPeer.value = false
     }
 }
