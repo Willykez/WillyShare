@@ -71,7 +71,15 @@ object NotificationHelper {
         } else 0
         val title = if (isSending) "Sending files\u2026" else "Receiving files\u2026"
         val speedMb = progress.overallSpeed / (1024 * 1024)
-        val text = "$percent% \u2022 %.1f MB/s".format(speedMb)
+        // NOTE: the literal '%' after $percent must never sit inside a .format() call -
+        // Kotlin's .format() runs Java's Formatter over the WHOLE interpolated string, so
+        // the stray '%' + space was read as a numeric flag, then choked on '\u2022'
+        // (bullet) as an invalid conversion character (UnknownFormatConversionException),
+        // crashing on every progress tick since this fires from a main-thread StateFlow
+        // collector with no try/catch around it. Fix: format the speed value on its own
+        // first, then interpolate into the final string with no further .format() pass.
+        val speedText = "%.1f".format(speedMb)
+        val text = "$percent% \u2022 $speedText MB/s"
         return NotificationCompat.Builder(context, TRANSFER_CHANNEL_ID)
             .setContentTitle(title)
             .setContentText(text)
@@ -84,11 +92,20 @@ object NotificationHelper {
             .build()
     }
 
-    /** Updates the shared foreground-notification slot with fresh progress (works even outside the service). */
+    /** Updates the shared foreground-notification slot with fresh progress (works even outside the service).
+     *  Guardrail: this fires on every progress tick from a main-thread StateFlow collector in
+     *  PulseViewModel's init{} - any bad notification state here (malformed string, missing
+     *  icon, thrown builder exception) must never propagate into a process crash. Swallow and
+     *  drop that single tick instead; the next tick will simply try again. */
     fun updateProgress(context: Context, isSending: Boolean, progress: TransferProgress) {
         if (!hasPostPermission(context)) return
-        NotificationManagerCompat.from(context)
-            .notify(FOREGROUND_NOTIFICATION_ID, buildProgressNotification(context, isSending, progress))
+        try {
+            NotificationManagerCompat.from(context)
+                .notify(FOREGROUND_NOTIFICATION_ID, buildProgressNotification(context, isSending, progress))
+        } catch (_: Throwable) {
+            // Deliberately swallowed - see guardrail note above. A dropped progress-notification
+            // tick is harmless; a crashed transfer is not.
+        }
     }
 
     fun notifyConnectionStatus(context: Context, connected: Boolean, deviceName: String?) {

@@ -505,11 +505,11 @@ private fun FileThumbnail(file: FileItemEntity, modifier: Modifier = Modifier, i
                         contentAlignment = Alignment.Center
                     ) {
                         Icon(
-    imageVector = Icons.Filled.PlayArrow,
-    contentDescription = null,
-    tint = Color.White,
-    modifier = Modifier.size(14.dp)
-)
+                            imageVector = Icons.Filled.PlayArrow,
+                            contentDescription = null,
+                            tint = Color.White,
+                            modifier = Modifier.size(14.dp)
+                        )
                     }
                 } else {
                     Icon(
