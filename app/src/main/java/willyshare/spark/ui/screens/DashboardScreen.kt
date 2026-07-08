@@ -127,10 +127,20 @@ fun DashboardScreen(
                             QuickActionRow(
                                 icon = willyshare.spark.ui.PulseIcons.Send,
                                 title = "Send",
-                                subtitle = "Share files with a nearby device",
+                                subtitle = "Find a nearby device, then pick files",
                                 iconTint = SleekPrimary,
                                 iconBg = SleekPrimaryContainer,
                                 onClick = { onNavigate("send") }
+                            )
+                        }
+                        GroupedListItem(position = GroupPosition.MIDDLE) {
+                            QuickActionRow(
+                                icon = willyshare.spark.ui.PulseIcons.FolderOpenEmpty,
+                                title = "Choose Files",
+                                subtitle = "Pick files first, connect after",
+                                iconTint = SleekPrimary,
+                                iconBg = SleekPrimaryContainer,
+                                onClick = { onNavigate("select") }
                             )
                         }
                         GroupedListItem(position = GroupPosition.LAST) {

@@ -80,12 +80,15 @@ import com.google.accompanist.permissions.shouldShowRationale
 @Composable
 fun SelectFilesScreen(
     viewModel: PulseViewModel,
-    onNavigate: (String) -> Unit
+    onNavigate: (String) -> Unit,
+    onGoBack: (() -> Unit)? = null
 ) {
     val files by viewModel.allFiles.collectAsState()
     val currentTab by viewModel.selectedCategoryTab.collectAsState()
     val isLoading by viewModel.isLoadingFiles.collectAsState()
     val targetName by viewModel.targetName.collectAsState()
+    val targetIp by viewModel.targetIp.collectAsState()
+    val goBack: () -> Unit = onGoBack ?: { onNavigate("dashboard") }
 
     // Reading photos/videos/audio/documents via MediaStore requires these at runtime,
     // not just declared in the manifest - without them queryAll() silently returns nothing,
@@ -147,7 +150,7 @@ fun SelectFilesScreen(
                         title = "Select to Send",
                         subtitle = targetName?.let { "To $it" },
                         showBack = true,
-                        onBack = { onNavigate("send") }
+                        onBack = goBack
                     )
                 Column(
                     modifier = Modifier.fillMaxSize().padding(32.dp),
@@ -190,7 +193,7 @@ fun SelectFilesScreen(
                     title = "Select to Send",
                     subtitle = targetName?.let { "To $it" },
                     showBack = true,
-                    onBack = { onNavigate("send") }
+                    onBack = goBack
                 )
                 Row(
                     modifier = Modifier
@@ -405,7 +408,17 @@ fun SelectFilesScreen(
                     Spacer(modifier = Modifier.height(16.dp))
 
                     Button(
-                        onClick = { onNavigate("transfer") },
+                        onClick = {
+                            if (targetIp != null) {
+                                // Already connected (came from the connect-first flow, or a
+                                // connection was already active) - send immediately.
+                                onNavigate("transfer")
+                            } else {
+                                // Pick-first flow: cart is ready, now go find a device. Once
+                                // connected, Send/Scan-QR auto-continue straight to sending.
+                                onNavigate("send")
+                            }
+                        },
                         modifier = Modifier
                             .fillMaxWidth()
                             .height(54.dp),
@@ -420,7 +433,11 @@ fun SelectFilesScreen(
                         )
                         Spacer(modifier = Modifier.width(8.dp))
                         Text(
-                            text = "SEND NOW${targetName?.let { " TO ${it.uppercase()}" } ?: ""}",
+                            text = if (targetIp != null) {
+                                "SEND NOW${targetName?.let { " TO ${it.uppercase()}" } ?: ""}"
+                            } else {
+                                "CONNECT & SEND"
+                            },
                             fontSize = 14.sp,
                             fontWeight = FontWeight.Bold,
                             color = Color.White,

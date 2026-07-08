@@ -88,7 +88,9 @@ fun ScanQrScreen(
                             isProcessing = true
                             val ok = viewModel.applyScannedPayload(raw)
                             if (ok) {
-                                onNavigate("select")
+                                // Same rule as the peer-list connect path: if files were
+                                // already queued before scanning, go straight to sending.
+                                onNavigate(if (viewModel.hasPendingCart.value) "transfer" else "select")
                             } else {
                                 scanResultMessage = "That QR isn't a valid Pulse pairing code."
                                 isProcessing = false

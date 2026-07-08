@@ -178,7 +178,7 @@ class MainActivity : ComponentActivity() {
             "receive" -> ReceiveScreen(viewModel = viewModel, onNavigate = ::navigate)
             "my_qr" -> MyQrScreen(viewModel = viewModel, onNavigate = ::navigate)
             "scan_qr" -> ScanQrScreen(viewModel = viewModel, onNavigate = ::navigate)
-            "select" -> SelectFilesScreen(viewModel = viewModel, onNavigate = ::navigate)
+            "select" -> SelectFilesScreen(viewModel = viewModel, onNavigate = ::navigate, onGoBack = ::goBack)
             "browse" -> willyshare.spark.ui.screens.BrowseFilesScreen(viewModel = viewModel, onNavigate = ::navigate)
             "transfer" -> TransferringScreen(viewModel = viewModel, onNavigate = ::navigate)
             "history" -> HistoryScreen(viewModel = viewModel, onNavigate = ::navigate)

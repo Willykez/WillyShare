@@ -537,6 +537,19 @@ class PulseViewModel(application: Application) : AndroidViewModel(application) {
         pendingSharedFiles.value = files
     }
 
+    /**
+     * True the instant the user has picked *anything* to send - from MediaStore, from the
+     * folder browser, or from another app's share sheet - regardless of whether a device is
+     * connected yet. This is what makes "pick files first, then connect" possible: the Send
+     * screen checks this to decide whether to jump straight to Transferring once a device is
+     * found, instead of always routing back through the picker.
+     */
+    val hasPendingCart: StateFlow<Boolean> = combine(
+        allFiles, browseSelectionSummary, pendingSharedFiles
+    ) { files, browseSummary, shared ->
+        files.any { it.isSelected } || browseSummary.first > 0 || shared.isNotEmpty()
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), false)
+
     // ---------- History ----------
 
     fun deleteTransfer(transfer: TransferEntity) {

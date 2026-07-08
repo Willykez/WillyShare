@@ -81,6 +81,7 @@ fun SendScreen(
     val isDiscovering by viewModel.isDiscovering.collectAsState()
     val targetIp by viewModel.targetIp.collectAsState()
     val targetSource by viewModel.targetSource.collectAsState()
+    val hasPendingCart by viewModel.hasPendingCart.collectAsState()
     var statusMessage by remember { mutableStateOf<String?>(null) }
     var connectingTo by remember { mutableStateOf<String?>(null) }
     var wifiEnabled by remember { mutableStateOf(WifiEnableHelper.isWifiEnabled(context)) }
@@ -115,7 +116,12 @@ fun SendScreen(
 
     LaunchedEffect(targetIp, targetSource) {
         if (targetIp != null && targetSource == TargetSource.WIFI_DIRECT) {
-            onNavigate("select")
+            // "Pick files first" flow: the cart already has something queued (picked from
+            // Choose Files, the folder browser, or a share-sheet hand-off) - skip the picker
+            // entirely and go straight to sending, exactly like Quick Share does once a
+            // target is found. Otherwise, this is the original "connect first" flow: go pick
+            // files now that we know who we're sending to.
+            onNavigate(if (hasPendingCart) "transfer" else "select")
         }
     }
 
