@@ -88,9 +88,11 @@ fun ScanQrScreen(
                             isProcessing = true
                             val ok = viewModel.applyScannedPayload(raw)
                             if (ok) {
-                                // Same rule as the peer-list connect path: if files were
-                                // already queued before scanning, go straight to sending.
-                                onNavigate(if (viewModel.hasPendingCart.value) "transfer" else "select")
+                                // We're the receiver in this pairing - no cart of our own, so
+                                // let the sender know our address instead of jumping into a
+                                // picker, then sit on Receive and wait for the push to land.
+                                viewModel.announcePresenceToSender()
+                                onNavigate("receive")
                             } else {
                                 scanResultMessage = "That QR isn't a valid Pulse pairing code."
                                 isProcessing = false
@@ -107,9 +109,9 @@ fun ScanQrScreen(
                 )
 
                 InPageHeader(
-                    title = "Scan pairing QR",
+                    title = "Scan sender's QR",
                     showBack = true,
-                    onBack = { onNavigate("send") },
+                    onBack = { onNavigate("receive") },
                     modifier = Modifier.align(Alignment.TopCenter).background(Color.Black.copy(alpha = 0.35f)),
                 )
 
@@ -122,7 +124,7 @@ fun ScanQrScreen(
                     horizontalAlignment = Alignment.CenterHorizontally
                 ) {
                     Text(
-                        text = scanResultMessage ?: "Point your camera at the receiver's pairing QR code",
+                        text = scanResultMessage ?: "Point your camera at the sender's pairing QR code",
                         color = Color.White,
                         fontSize = 13.sp,
                         textAlign = TextAlign.Center
@@ -130,9 +132,9 @@ fun ScanQrScreen(
                 }
             } else {
                 InPageHeader(
-                    title = "Scan pairing QR",
+                    title = "Scan sender's QR",
                     showBack = true,
-                    onBack = { onNavigate("send") },
+                    onBack = { onNavigate("receive") },
                     modifier = Modifier.align(Alignment.TopCenter),
                 )
                 Column(

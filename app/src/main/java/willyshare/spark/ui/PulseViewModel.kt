@@ -48,6 +48,13 @@ enum class TargetSource { WIFI_DIRECT, QR_PAIR, NONE }
  */
 enum class LinkState { IDLE, CONNECTED, TRANSFERRING }
 
+/**
+ * Stage 3 QR/scan role swap: who's doing what in the current pairing attempt.
+ * WAITING_TO_BE_FOUND = has a cart, generated the QR, sitting idle until someone scans it.
+ * SCANNING_FOR_SENDER = has no cart, is the one hunting for a sender's QR to scan.
+ */
+enum class PairingRole { NONE, WAITING_TO_BE_FOUND, SCANNING_FOR_SENDER }
+
 class PulseViewModel(application: Application) : AndroidViewModel(application) {
     private val dao = PulseDatabase.getDatabase(application).pulseDao()
     private val appContext get() = getApplication<Application>()
@@ -140,6 +147,13 @@ class PulseViewModel(application: Application) : AndroidViewModel(application) {
     val fastConnectStatus = MutableStateFlow<String?>(null)
     val isFastConnectSupported: Boolean get() = wifiDirect.isFastConnectSupported
 
+    // ---- Stage 3: QR/scan role swap ----
+    val pairingRole = MutableStateFlow(PairingRole.NONE)
+    /** IP of whoever last connected to our always-on receive socket - real transfer or a
+     *  zero-file announce ping alike. Used on the WAITING_TO_BE_FOUND side to learn who
+     *  scanned our QR, since the scanner (not us) is the one who knows our address. */
+    private val incomingPeerIp: StateFlow<String?> = fileReceiver.peerConnectedIp
+
     /** One combined signal for "what's going on right now," usable from any screen. */
     val linkState: StateFlow<LinkState> = combine(
         targetSource, wifiDirect.hostHasPeer, fileReceiver.senderConnected, sendProgress, receiveProgress
@@ -195,11 +209,25 @@ class PulseViewModel(application: Application) : AndroidViewModel(application) {
                 }
             }
         }
+        viewModelScope.launch {
+            // WAITING_TO_BE_FOUND side of the Stage 3 role swap: we generated the QR and are
+            // sitting idle. Since we never scan, we can't learn the other device's address
+            // the normal way - this is that address arriving instead, via the zero-file
+            // announce ping (or a real transfer) the scanner sends once it's paired with us.
+            incomingPeerIp.collect { ip ->
+                if (ip != null && pairingRole.value == PairingRole.WAITING_TO_BE_FOUND && targetSource.value == TargetSource.NONE) {
+                    targetIp.value = ip
+                    targetPort.value = TRANSFER_PORT
+                    targetSource.value = TargetSource.QR_PAIR
+                    if (targetName.value == null) targetName.value = "Nearby device"
+                    NotificationHelper.notifyConnectionStatus(appContext, connected = true, deviceName = targetName.value)
+                }
+            }
+        }
         // Receiving is now always-on for the lifetime of the app process, independent of
         // which screen is open - matches how Xender/Quick Share stay reachable in the
         // background instead of only listening while a specific screen is on top.
         startReceiving()
-        refreshMyQrPayload()
     }
 
     override fun onCleared() {
@@ -225,6 +253,7 @@ class PulseViewModel(application: Application) : AndroidViewModel(application) {
         targetName.value = null
         targetSource.value = TargetSource.NONE
         fastConnectStatus.value = null
+        pairingRole.value = PairingRole.NONE
         // NOTE: deliberately not calling SparkTransferService.stopIfIdle() here - receiving
         // is always-on now, so the foreground service must keep running regardless of a
         // send/pairing attempt being reset. It only ever stops in onCleared()/stopReceiving().
@@ -408,7 +437,36 @@ class PulseViewModel(application: Application) : AndroidViewModel(application) {
         targetIp.value = null
         targetName.value = null
         targetSource.value = TargetSource.NONE
+        pairingRole.value = PairingRole.NONE
         wifiDirect.disconnect()
+    }
+
+    /** Sender side: has a cart, tapped Send, becomes discoverable/waiting - generates the QR. */
+    fun beginWaitingToBeFound() {
+        targetIp.value = null
+        targetSource.value = TargetSource.NONE
+        pairingRole.value = PairingRole.WAITING_TO_BE_FOUND
+        refreshMyQrPayload()
+    }
+
+    /** Receiver side: no cart, goes hunting for a sender's QR to scan. */
+    fun beginScanningForSender() {
+        targetIp.value = null
+        targetSource.value = TargetSource.NONE
+        pairingRole.value = PairingRole.SCANNING_FOR_SENDER
+    }
+
+    /** Backs out of "waiting to be found" without a connection ever landing - tears the group down. */
+    fun cancelWaiting() {
+        pairingRole.value = PairingRole.NONE
+        wifiDirect.stopGroup()
+    }
+
+    /** Called right after a successful scan on the SCANNING_FOR_SENDER side: we have no cart,
+     *  so instead of pushing anything we just let the sender (who does) know our address. */
+    fun announcePresenceToSender() {
+        val ip = targetIp.value ?: return
+        fileSender.announce(ip)
     }
 
     // ---------- Receiving files ----------
@@ -465,11 +523,14 @@ class PulseViewModel(application: Application) : AndroidViewModel(application) {
             // hiccup, a socket dying mid-write) must never crash the app - it should just
             // surface as a failed transfer with an error message on screen.
             var success = false
+            var selected: List<FileItemEntity> = emptyList()
+            var fromBrowser: List<SendableFile> = emptyList()
+            var fromShareIntent: List<SendableFile> = emptyList()
             try {
-                val selected = allFiles.value.filter { it.isSelected }
+                selected = allFiles.value.filter { it.isSelected }
                 val fromMediaStore = selected.map { SendableFile(Uri.parse(it.uri), it.name, it.sizeBytes) }
-                val fromBrowser = resolveBrowseSendables()
-                val fromShareIntent = pendingSharedFiles.value
+                fromBrowser = resolveBrowseSendables()
+                fromShareIntent = pendingSharedFiles.value
                 val sendables = fromMediaStore + fromBrowser + fromShareIntent
                 success = withContext(Dispatchers.IO) {
                     fileSender.send(ip, sendables)
@@ -503,15 +564,23 @@ class PulseViewModel(application: Application) : AndroidViewModel(application) {
                             )
                         )
                     }
-                    dao.clearAllSelections()
-                    clearBrowseSelection()
-                    pendingSharedFiles.value = emptyList()
                 }
             } catch (_: kotlinx.coroutines.CancellationException) {
                 // User hit Cancel - not an error, just stop quietly.
             } catch (t: Throwable) {
                 success = false
             } finally {
+                // Always empty the cart here - regardless of success, failure, or cancel.
+                // Previously this only ran on success, so a failed/cancelled send left its
+                // files still marked selected and they'd silently get bundled into the very
+                // next send attempt, looking like "old files resending." withContext(NonCancellable)
+                // because this finally block also runs during cancellation, where a plain
+                // suspend call would throw immediately instead of completing.
+                withContext(kotlinx.coroutines.NonCancellable) {
+                    if (selected.isNotEmpty()) dao.clearAllSelections()
+                    clearBrowseSelection()
+                    pendingSharedFiles.value = emptyList()
+                }
                 // Deliberately not stopping the service here - it's the same always-on
                 // foreground service keeping receiving alive; a finished/failed send must
                 // not tear that down.
@@ -527,6 +596,10 @@ class PulseViewModel(application: Application) : AndroidViewModel(application) {
         transferJob = null
         // Not stopping the service - same reasoning as above, receiving stays up.
     }
+
+    /** Per-file pause/resume and cancel, keyed the same as the FileProgressItem shown on screen. */
+    fun toggleFilePause(key: String) = fileSender.toggleFilePause(key)
+    fun cancelFileTransfer(key: String) = fileSender.cancelFile(key)
 
     // ---------- Files shared into Sparks from another app (Gallery, Files, etc.) ----------
 

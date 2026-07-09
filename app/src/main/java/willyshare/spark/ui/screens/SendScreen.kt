@@ -22,7 +22,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.QrCodeScanner
+import androidx.compose.material.icons.filled.QrCode2
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
@@ -242,9 +242,12 @@ fun SendScreen(
 
                 if (permissionsState.allPermissionsGranted) {
                     SleekFloatingPillButton(
-                        text = "Pair via QR",
-                        icon = Icons.Default.QrCodeScanner,
-                        onClick = { onNavigate("scan_qr") },
+                        text = "Show my QR",
+                        icon = Icons.Default.QrCode2,
+                        onClick = {
+                            viewModel.beginWaitingToBeFound()
+                            onNavigate("my_qr")
+                        },
                         modifier = Modifier
                             .align(Alignment.BottomCenter)
                             .padding(bottom = 24.dp)

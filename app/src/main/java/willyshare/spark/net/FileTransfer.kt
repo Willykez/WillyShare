@@ -42,7 +42,9 @@ data class FileProgressItem(
     val totalBytes: Long,
     val transferredBytes: Long = 0L,
     val speedBytesPerSec: Double = 0.0,
-    val isComplete: Boolean = false
+    val isComplete: Boolean = false,
+    val isPaused: Boolean = false,
+    val isCancelled: Boolean = false
 )
 
 data class TransferProgress(
@@ -136,6 +138,10 @@ class FileReceiveServer(private val targetProvider: () -> ReceiveTarget) {
     private val _senderConnected = MutableStateFlow(false)
     val senderConnected: StateFlow<Boolean> = _senderConnected.asStateFlow()
 
+    /** IP of whoever last connected to us - real transfer or a zero-file announce ping alike. */
+    private val _peerConnectedIp = MutableStateFlow<String?>(null)
+    val peerConnectedIp: StateFlow<String?> = _peerConnectedIp.asStateFlow()
+
     @Volatile private var serverChannel: ServerSocketChannel? = null
     @Volatile private var running = false
     private val pool = Executors.newCachedThreadPool()
@@ -161,6 +167,7 @@ class FileReceiveServer(private val targetProvider: () -> ReceiveTarget) {
                     val s = client.socket()
                     s.tcpNoDelay = true
                     s.receiveBufferSize = SOCKET_BUF
+                    _peerConnectedIp.value = s.inetAddress?.hostAddress
                     activeStreams.incrementAndGet()
                     _senderConnected.value = true
                     pool.execute {
@@ -266,8 +273,45 @@ class FileSenderClient(private val context: Context) {
     private val aggregator = ProgressAggregator()
     val progress: StateFlow<TransferProgress> = aggregator.flow.asStateFlow()
 
+    // Per-file controls, keyed the same as FileProgressItem.key. Cleared at the start of
+    // every send() so a paused/cancelled file from a previous session can never bleed into
+    // the next one.
+    private val pausedKeys = java.util.concurrent.ConcurrentHashMap.newKeySet<String>()
+    private val cancelledKeys = java.util.concurrent.ConcurrentHashMap.newKeySet<String>()
+
+    fun toggleFilePause(key: String) {
+        if (!pausedKeys.add(key)) pausedKeys.remove(key)
+    }
+
+    fun cancelFile(key: String) {
+        cancelledKeys.add(key)
+        pausedKeys.remove(key)
+    }
+
+    /**
+     * Zero-file "hello" - a valid degenerate case of the same wire protocol (totalCount=0,
+     * fileCount=0, no file entries). Lets a device with no cart of its own announce its IP to
+     * whoever it just paired with, without going through the real transfer path. Fire-and-forget:
+     * best effort, no result to report back.
+     */
+    fun announce(hostIp: String) {
+        Thread {
+            try {
+                SocketChannel.open(InetSocketAddress(hostIp, TRANSFER_PORT)).use { channel ->
+                    val dout = DataOutputStream(channel.socket().getOutputStream())
+                    dout.writeInt(0)
+                    dout.writeInt(0)
+                    dout.flush()
+                }
+            } catch (_: Exception) {
+            }
+        }.apply { isDaemon = true }.start()
+    }
+
     suspend fun send(hostIp: String, files: List<SendableFile>): Boolean = coroutineScope {
         if (files.isEmpty()) return@coroutineScope false
+        pausedKeys.clear()
+        cancelledKeys.clear()
         aggregator.reset()
         aggregator.initExpectedTotal(files.size)   // ← FIXED HERE
         aggregator.setConnecting(true)
@@ -311,21 +355,36 @@ class FileSenderClient(private val context: Context) {
 
                 for (file in files) {
                     val wireName = file.relativePath ?: file.name
+                    val key = "${channel.hashCode()}_${wireName}"
+
+                    // Cancelled before we ever sent its header - safe to just skip it, the
+                    // receiver never learns this file existed.
+                    if (key in cancelledKeys) {
+                        aggregator.update(FileProgressItem(key, file.name, file.sizeBytes, 0L, 0.0, isCancelled = true), force = true)
+                        continue
+                    }
+
                     val nameBytes = wireName.toByteArray(StandardCharsets.UTF_8)
                     dout.writeInt(nameBytes.size)
                     dout.write(nameBytes)
                     dout.writeLong(file.sizeBytes)
                     dout.flush()
 
-                    val key = "${channel.hashCode()}_${wireName}"
                     val startTime = System.currentTimeMillis()
                     val pfd = try { context.contentResolver.openFileDescriptor(file.uri, "r") } catch (_: Exception) { null }
 
+                    var cancelled = false
                     if (pfd != null) {
                         pfd.use { d ->
                             FileInputStream(d.fileDescriptor).channel.use { fc ->
                                 var pos = 0L
                                 while (pos < file.sizeBytes) {
+                                    if (key in cancelledKeys) { cancelled = true; break }
+                                    if (key in pausedKeys) {
+                                        aggregator.update(FileProgressItem(key, file.name, file.sizeBytes, pos, 0.0, isPaused = true), force = true)
+                                        while (key in pausedKeys && key !in cancelledKeys) Thread.sleep(150)
+                                        if (key in cancelledKeys) { cancelled = true; break }
+                                    }
                                     val toSend = minOf(CHUNK_SIZE.toLong(), file.sizeBytes - pos)
                                     val n = fc.transferTo(pos, toSend, channel)
                                     if (n <= 0) break
@@ -340,6 +399,12 @@ class FileSenderClient(private val context: Context) {
                             val buffer = ByteArray(CHUNK_SIZE)
                             var sent = 0L
                             while (true) {
+                                if (key in cancelledKeys) { cancelled = true; break }
+                                if (key in pausedKeys) {
+                                    aggregator.update(FileProgressItem(key, file.name, file.sizeBytes, sent, 0.0, isPaused = true), force = true)
+                                    while (key in pausedKeys && key !in cancelledKeys) Thread.sleep(150)
+                                    if (key in cancelledKeys) { cancelled = true; break }
+                                }
                                 val read = input.read(buffer)
                                 if (read == -1) break
                                 dout.write(buffer, 0, read)
@@ -349,6 +414,15 @@ class FileSenderClient(private val context: Context) {
                             }
                         } ?: throw java.io.IOException("Could not open ${file.name}")
                         dout.flush()
+                    }
+                    if (cancelled) {
+                        // The header for this file was already sent, so the receiver is
+                        // mid-read expecting exact byte count - we can't just move on to the
+                        // next file without desyncing its parser. Close this connection; any
+                        // other files still queued in THIS group are lost, but the other
+                        // parallel groups (and files already completed) are unaffected.
+                        aggregator.update(FileProgressItem(key, file.name, file.sizeBytes, 0L, 0.0, isCancelled = true), force = true)
+                        return@use false
                     }
                     aggregator.update(FileProgressItem(key, file.name, file.sizeBytes, file.sizeBytes, 0.0, isComplete = true), force = true)
                 }

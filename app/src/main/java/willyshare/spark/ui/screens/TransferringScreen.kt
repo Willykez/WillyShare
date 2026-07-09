@@ -117,7 +117,13 @@ fun TransferringScreen(viewModel: PulseViewModel, onNavigate: (String) -> Unit) 
                         Text("Files", fontSize = 13.sp, fontWeight = FontWeight.Bold, color = SleekOnSurface)
                         Spacer(modifier = Modifier.height(8.dp))
                         LazyColumn(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                            items(progress.files, key = { it.key }) { item -> FileProgressRow(item) }
+                            items(progress.files, key = { it.key }) { item ->
+                                FileProgressRow(
+                                    item = item,
+                                    onTogglePause = { viewModel.toggleFilePause(item.key) },
+                                    onCancel = { viewModel.cancelFileTransfer(item.key) }
+                                )
+                            }
                         }
                     }
                 }

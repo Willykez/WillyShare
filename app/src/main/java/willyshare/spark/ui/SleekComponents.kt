@@ -551,26 +551,76 @@ fun GlassCard(modifier: Modifier = Modifier, content: @Composable ColumnScope.()
 }
 
 @Composable
-fun FileProgressRow(item: FileProgressItem) {
+fun FileProgressRow(
+    item: FileProgressItem,
+    onTogglePause: (() -> Unit)? = null,
+    onCancel: (() -> Unit)? = null
+) {
     val fraction = if (item.totalBytes > 0) (item.transferredBytes.toFloat() / item.totalBytes.toFloat()).coerceIn(0f, 1f) else 0f
     val doneColor = Color(0xFF2E7D32)
+    val cancelColor = Color(0xFFD32F2F)
+    val showControls = (onTogglePause != null || onCancel != null) && !item.isComplete && !item.isCancelled
     Column(modifier = Modifier.fillMaxWidth().padding(vertical = 6.dp)) {
-        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+        Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween) {
             Text(
                 text = item.name, fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = SleekOnSurface,
                 maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f)
             )
             Spacer(modifier = Modifier.width(8.dp))
             Text(
-                text = if (item.isComplete) "Done" else "${(fraction * 100).toInt()}%",
-                fontSize = 12.sp, color = if (item.isComplete) doneColor else SleekOnSurfaceVariant
+                text = when {
+                    item.isCancelled -> "Cancelled"
+                    item.isComplete -> "Done"
+                    item.isPaused -> "Paused"
+                    else -> "${(fraction * 100).toInt()}%"
+                },
+                fontSize = 12.sp,
+                color = when {
+                    item.isCancelled -> cancelColor
+                    item.isComplete -> doneColor
+                    else -> SleekOnSurfaceVariant
+                }
             )
+            if (showControls) {
+                Spacer(modifier = Modifier.width(6.dp))
+                if (onTogglePause != null) {
+                    androidx.compose.material3.IconButton(
+                        onClick = onTogglePause,
+                        modifier = Modifier.size(26.dp)
+                    ) {
+                        Icon(
+                            imageVector = if (item.isPaused) androidx.compose.material.icons.Icons.Default.PlayArrow else androidx.compose.material.icons.Icons.Default.Pause,
+                            contentDescription = if (item.isPaused) "Resume" else "Pause",
+                            tint = SleekPrimary,
+                            modifier = Modifier.size(16.dp)
+                        )
+                    }
+                }
+                if (onCancel != null) {
+                    androidx.compose.material3.IconButton(
+                        onClick = onCancel,
+                        modifier = Modifier.size(26.dp)
+                    ) {
+                        Icon(
+                            imageVector = androidx.compose.material.icons.Icons.Default.Close,
+                            contentDescription = "Cancel",
+                            tint = cancelColor,
+                            modifier = Modifier.size(16.dp)
+                        )
+                    }
+                }
+            }
         }
         Spacer(modifier = Modifier.height(4.dp))
         LinearProgressIndicator(
             progress = { fraction },
             modifier = Modifier.fillMaxWidth().height(6.dp).clip(RoundedCornerShape(999.dp)),
-            color = if (item.isComplete) doneColor else SleekPrimary,
+            color = when {
+                item.isCancelled -> cancelColor
+                item.isComplete -> doneColor
+                item.isPaused -> SleekOnSurfaceVariant
+                else -> SleekPrimary
+            },
             trackColor = SleekOutline.copy(alpha = 0.2f)
         )
         Spacer(modifier = Modifier.height(2.dp))

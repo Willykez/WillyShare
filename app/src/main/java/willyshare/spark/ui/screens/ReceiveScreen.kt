@@ -20,7 +20,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.QrCode2
+import androidx.compose.material.icons.filled.QrCodeScanner
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Icon
@@ -78,9 +78,9 @@ fun ReceiveScreen(viewModel: PulseViewModel, onNavigate: (String) -> Unit) {
 
     LaunchedEffect(Unit) {
         if (!permissionsState.allPermissionsGranted) permissionsState.launchMultiplePermissionRequest()
-        viewModel.refreshMyQrPayload()
         // Receiving itself is started once, app-wide, in the ViewModel's init{} - it no
-        // longer needs (or should) start/stop with this screen's lifecycle.
+        // longer needs (or should) start/stop with this screen's lifecycle. Stage 3: this
+        // screen no longer generates a QR of its own - it's the scanning side now.
     }
     LaunchedEffect(permissionsState.allPermissionsGranted) {
         if (permissionsState.allPermissionsGranted) viewModel.startPeerDiscovery()
@@ -178,7 +178,7 @@ fun ReceiveScreen(viewModel: PulseViewModel, onNavigate: (String) -> Unit) {
                         Spacer(modifier = Modifier.height(6.dp))
                         if (!senderConnected) {
                             Text(
-                                "Ask the sender to pick \u201C$deviceName\u201D from their Send screen,\nor scan your QR code.",
+                                "Ask the sender to pick \u201C$deviceName\u201D from their Send screen,\nor tap below to scan their QR code.",
                                 fontSize = 13.sp, color = SleekOnSurfaceVariant, textAlign = TextAlign.Center
                             )
                         } else if (progress.overallTotal == 0L) {
@@ -222,9 +222,12 @@ fun ReceiveScreen(viewModel: PulseViewModel, onNavigate: (String) -> Unit) {
 
                 if (!senderConnected && permissionsState.allPermissionsGranted) {
                     SleekFloatingPillButton(
-                        text = "Show my QR",
-                        icon = Icons.Default.QrCode2,
-                        onClick = { onNavigate("my_qr") },
+                        text = "Scan sender's QR",
+                        icon = Icons.Default.QrCodeScanner,
+                        onClick = {
+                            viewModel.beginScanningForSender()
+                            onNavigate("scan_qr")
+                        },
                         modifier = Modifier
                             .align(Alignment.BottomCenter)
                             .padding(bottom = 24.dp)

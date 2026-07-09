@@ -50,20 +50,24 @@ import willyshare.spark.ui.theme.SleekPrimary
 @Composable
 fun MyQrScreen(viewModel: PulseViewModel, onNavigate: (String) -> Unit) {
     val payload by viewModel.myQrPayload.collectAsState()
-    val senderConnected by viewModel.senderConnected.collectAsState()
+    val targetIp by viewModel.targetIp.collectAsState()
     val deviceName by viewModel.thisDeviceName.collectAsState()
     val highSpeedMode by viewModel.highSpeedMode.collectAsState()
     val fastConnectStatus by viewModel.fastConnectStatus.collectAsState()
 
-    LaunchedEffect(Unit) { viewModel.refreshMyQrPayload() }
-    LaunchedEffect(senderConnected) { if (senderConnected) onNavigate("receive") }
+    // Someone scanned us and announced their address - we're the one with the cart, so go push it.
+    LaunchedEffect(targetIp) { if (targetIp != null) onNavigate("transfer") }
 
     Scaffold(
         containerColor = Color.Transparent
     ) { innerPadding ->
         AuroraBackground(modifier = Modifier.fillMaxSize().padding(innerPadding)) {
             Column(modifier = Modifier.fillMaxSize()) {
-                InPageHeader(title = "My Pairing QR", showBack = true, onBack = { onNavigate("receive") })
+                InPageHeader(
+                    title = "Waiting to be found",
+                    showBack = true,
+                    onBack = { viewModel.cancelWaiting(); onNavigate("send") }
+                )
             Column(
                 modifier = Modifier.fillMaxSize().padding(24.dp),
                 horizontalAlignment = Alignment.CenterHorizontally,
@@ -104,9 +108,9 @@ fun MyQrScreen(viewModel: PulseViewModel, onNavigate: (String) -> Unit) {
                     Text(deviceName, fontSize = 18.sp, fontWeight = FontWeight.Bold, color = SleekOnSurface)
                     Spacer(modifier = Modifier.height(4.dp))
                     Text(
-                        text = if (senderConnected) "\u2705 Sender connected \u2014 opening receive screen\u2026" else "Have the sender open Pulse \u2192 Send \u2192 Pair via QR",
+                        text = "Have the receiver open Pulse \u2192 Receive \u2192 Scan sender's QR",
                         fontSize = 13.sp,
-                        color = if (senderConnected) Color(0xFF2E7D32) else SleekOnSurfaceVariant,
+                        color = SleekOnSurfaceVariant,
                         textAlign = TextAlign.Center
                     )
                     fastConnectStatus?.let { status ->

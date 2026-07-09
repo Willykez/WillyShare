@@ -223,6 +223,7 @@ class WifiDirectManager(private val context: Context) {
         val mgr = manager ?: return onResult(false, "Wi-Fi Direct not supported")
         val ch = channel ?: return onResult(false, "Not initialized")
         _hostHasPeer.value = false
+        _groupInfo.value = null
 
         val plainListener = object : WifiP2pManager.ActionListener {
             override fun onSuccess() {
@@ -251,33 +252,48 @@ class WifiDirectManager(private val context: Context) {
             }
         }
 
-        try {
-            if (isFastConnectSupported && preferHighSpeed) {
-                val config = WifiP2pConfig.Builder()
-                    .setNetworkName(networkName)
-                    .setPassphrase(passphrase)
-                    .enablePersistentMode(false)
-                    .setGroupOperatingBand(WifiP2pConfig.GROUP_OWNER_BAND_5GHZ)
-                    .build()
-                config.groupOwnerIntent = 15
-                mgr.createGroup(ch, config, fastListener)
-            } else {
-                // Pre-Q devices (or high-speed mode turned off): plain autonomous group,
-                // band is whatever the chipset/driver picks. This is always available on
-                // every Android version - it's the reliable baseline, not a fallback of
-                // last resort, since it doesn't depend on already being on some Wi-Fi network.
-                mgr.createGroup(ch, plainListener)
-            }
-        } catch (e: SecurityException) {
-            onResult(false, "Missing permission to create group")
-        } catch (e: IllegalArgumentException) {
-            // Some OEMs reject the network name/passphrase format outright - fall back to
-            // auto-generated credentials via the plain (no explicit config) overload.
+        val doCreate = {
             try {
-                mgr.createGroup(ch, plainListener)
-            } catch (e2: SecurityException) {
+                if (isFastConnectSupported && preferHighSpeed) {
+                    val config = WifiP2pConfig.Builder()
+                        .setNetworkName(networkName)
+                        .setPassphrase(passphrase)
+                        .enablePersistentMode(false)
+                        .setGroupOperatingBand(WifiP2pConfig.GROUP_OWNER_BAND_5GHZ)
+                        .build()
+                    config.groupOwnerIntent = 15
+                    mgr.createGroup(ch, config, fastListener)
+                } else {
+                    // Pre-Q devices (or high-speed mode turned off): plain autonomous group,
+                    // band is whatever the chipset/driver picks. Always available - the
+                    // reliable baseline, not a fallback of last resort.
+                    mgr.createGroup(ch, plainListener)
+                }
+            } catch (e: SecurityException) {
                 onResult(false, "Missing permission to create group")
+            } catch (e: IllegalArgumentException) {
+                // Some OEMs reject the network name/passphrase format outright - fall back to
+                // auto-generated credentials via the plain (no explicit config) overload.
+                try {
+                    mgr.createGroup(ch, plainListener)
+                } catch (e2: SecurityException) {
+                    onResult(false, "Missing permission to create group")
+                }
             }
+        }
+
+        // Always tear down any group already active on this device first. createGroup()
+        // fails with BUSY if one exists - e.g. toggling High-speed Mode (2.4GHz <-> 5GHz)
+        // while already broadcasting used to leave the stale group live and the QR pointing
+        // at credentials that were never actually created. removeGroup()'s failure callback
+        // just means there was nothing to remove - proceed to create either way.
+        try {
+            mgr.removeGroup(ch, object : WifiP2pManager.ActionListener {
+                override fun onSuccess() { doCreate() }
+                override fun onFailure(reason: Int) { doCreate() }
+            })
+        } catch (_: SecurityException) {
+            doCreate()
         }
     }
 
