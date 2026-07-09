@@ -109,10 +109,12 @@ fun FloatingTransferPanel(
                         ),
                     contentAlignment = Alignment.Center
                 ) {
+                    val outlineColor = SleekOutline
+                    val primaryColor = SleekPrimary
                     Canvas(modifier = Modifier.size(BUBBLE_SIZE)) {
-                        drawCircle(color = SleekOutline.copy(alpha = 0.2f), style = Stroke(width = 4.dp.toPx()))
+                        drawCircle(color = outlineColor.copy(alpha = 0.2f), style = Stroke(width = 4.dp.toPx()))
                         drawArc(
-                            brush = Brush.sweepGradient(listOf(VioletAccent, SleekPrimary, CyanBright, VioletAccent)),
+                            brush = Brush.sweepGradient(listOf(VioletAccent, primaryColor, CyanBright, VioletAccent)),
                             startAngle = -90f, sweepAngle = fraction * 360f, useCenter = false,
                             style = Stroke(width = 4.dp.toPx(), cap = StrokeCap.Round)
                         )
