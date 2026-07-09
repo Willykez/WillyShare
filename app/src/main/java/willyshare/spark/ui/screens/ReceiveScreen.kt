@@ -72,7 +72,14 @@ fun ReceiveScreen(viewModel: PulseViewModel, onNavigate: (String) -> Unit) {
     val permissionsState = rememberMultiplePermissionsState(requiredPermissions)
 
     val isListening by viewModel.isListening.collectAsState()
-    val senderConnected by viewModel.senderConnected.collectAsState()
+    val linkState by viewModel.linkState.collectAsState()
+    // linkState flips to CONNECTED the instant pairing succeeds (QR scanned, or a peer
+    // joined our Wi-Fi Direct group) and stays there - unlike the receiver's raw per-socket
+    // "sender connected" flag, which briefly drops back to false in the gap between the
+    // Stage 3 announce handshake closing and the real file-transfer connection landing.
+    // Gating the UI on that raw flag was the cause of "got a connected notification but the
+    // screen still says waiting."
+    val connected = linkState != willyshare.spark.ui.LinkState.IDLE
     val progress by viewModel.receiveProgress.collectAsState()
     val deviceName by viewModel.thisDeviceName.collectAsState()
 
@@ -139,7 +146,7 @@ fun ReceiveScreen(viewModel: PulseViewModel, onNavigate: (String) -> Unit) {
                         val fraction = if (progress.overallTotal > 0) (progress.overallBytes.toFloat() / progress.overallTotal.toFloat()).coerceIn(0f, 1f) else 0f
 
                         Box(modifier = Modifier.size(200.dp), contentAlignment = Alignment.Center) {
-                            if (!senderConnected) {
+                            if (!connected) {
                                 RadarPulseRing(200, 0); RadarPulseRing(150, 700); RadarPulseRing(100, 1400)
                                 Box(
                                     modifier = Modifier
@@ -168,7 +175,7 @@ fun ReceiveScreen(viewModel: PulseViewModel, onNavigate: (String) -> Unit) {
                         Spacer(modifier = Modifier.height(16.dp))
                         Text(
                             text = when {
-                                !senderConnected -> "Waiting to receive"
+                                !connected -> "Waiting to receive"
                                 progress.isComplete -> "Transfer complete"
                                 progress.overallTotal > 0 -> "Receiving\u2026"
                                 else -> "Connected"
@@ -176,7 +183,7 @@ fun ReceiveScreen(viewModel: PulseViewModel, onNavigate: (String) -> Unit) {
                             fontSize = 20.sp, fontWeight = FontWeight.Bold, color = SleekOnSurface
                         )
                         Spacer(modifier = Modifier.height(6.dp))
-                        if (!senderConnected) {
+                        if (!connected) {
                             Text(
                                 "Ask the sender to pick \u201C$deviceName\u201D from their Send screen,\nor tap below to scan their QR code.",
                                 fontSize = 13.sp, color = SleekOnSurfaceVariant, textAlign = TextAlign.Center
@@ -216,11 +223,11 @@ fun ReceiveScreen(viewModel: PulseViewModel, onNavigate: (String) -> Unit) {
                                 }
                             }
                         }
-                        Spacer(modifier = Modifier.height(if (!senderConnected) 90.dp else 20.dp))
+                        Spacer(modifier = Modifier.height(if (!connected) 90.dp else 20.dp))
                     }
                 }
 
-                if (!senderConnected && permissionsState.allPermissionsGranted) {
+                if (!connected && permissionsState.allPermissionsGranted) {
                     SleekFloatingPillButton(
                         text = "Scan sender's QR",
                         icon = Icons.Default.QrCodeScanner,

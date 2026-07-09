@@ -128,7 +128,10 @@ sealed interface ReceiveTarget {
     data class Tree(val context: Context, val treeUri: Uri) : ReceiveTarget
 }
 
-class FileReceiveServer(private val targetProvider: () -> ReceiveTarget) {
+class FileReceiveServer(
+    private val targetProvider: () -> ReceiveTarget,
+    private val tokenProvider: () -> String? = { null }
+) {
     private val aggregator = ProgressAggregator()
     val progress: StateFlow<TransferProgress> = aggregator.flow.asStateFlow()
 
@@ -189,6 +192,25 @@ class FileReceiveServer(private val targetProvider: () -> ReceiveTarget) {
     private fun handleClient(channel: SocketChannel, onFileReceived: (String, Long) -> Unit) {
         channel.use { ch ->
             val din = DataInputStream(ch.socket().getInputStream())
+
+            // Token preamble: every connection starts with a length-prefixed string (empty
+            // if the sender has no token to present). Only enforced when WE currently have
+            // an active token of our own (i.e., we generated a QR this session) - proves
+            // whoever's connecting actually scanned it, instead of just guessing our IP off
+            // the same Wi-Fi network or a stale/replayed connection attempt.
+            val presentedTokenLen = din.readInt().coerceIn(0, 128)
+            val presentedTokenBytes = ByteArray(presentedTokenLen)
+            din.readFully(presentedTokenBytes)
+            val presentedToken = String(presentedTokenBytes, StandardCharsets.UTF_8)
+            val expectedToken = tokenProvider()
+            if (!expectedToken.isNullOrBlank() && presentedToken != expectedToken) {
+                // Quietly drop it - don't surface this on aggregator/receiveProgress.error,
+                // since that's shared, visible UI state and a rejected probe from some
+                // unrelated device on the same network shouldn't scare the user mid a
+                // perfectly fine, separate legitimate session.
+                return@use
+            }
+
             val totalCount = din.readInt()
             aggregator.initExpectedTotal(totalCount)   // ← FIXED HERE
             val fileCount = din.readInt()
@@ -283,11 +305,12 @@ class FileSenderClient(private val context: Context) {
      * whoever it just paired with, without going through the real transfer path. Fire-and-forget:
      * best effort, no result to report back.
      */
-    fun announce(hostIp: String) {
+    fun announce(hostIp: String, token: String? = null) {
         Thread {
             try {
                 SocketChannel.open(InetSocketAddress(hostIp, TRANSFER_PORT)).use { channel ->
                     val dout = DataOutputStream(channel.socket().getOutputStream())
+                    writeToken(dout, token)
                     dout.writeInt(0)
                     dout.writeInt(0)
                     dout.flush()
@@ -297,7 +320,13 @@ class FileSenderClient(private val context: Context) {
         }.apply { isDaemon = true }.start()
     }
 
-    suspend fun send(hostIp: String, files: List<SendableFile>): Boolean = coroutineScope {
+    private fun writeToken(dout: DataOutputStream, token: String?) {
+        val bytes = (token ?: "").toByteArray(StandardCharsets.UTF_8)
+        dout.writeInt(bytes.size)
+        dout.write(bytes)
+    }
+
+    suspend fun send(hostIp: String, files: List<SendableFile>, token: String? = null): Boolean = coroutineScope {
         if (files.isEmpty()) return@coroutineScope false
         pausedKeys.clear()
         cancelledKeys.clear()
@@ -316,7 +345,7 @@ class FileSenderClient(private val context: Context) {
             // screen was left mid-transfer) or, in the worst case, an OutOfMemoryError from a
             // huge file. Neither should ever crash the whole app - just report the failure.
             val results = groups.map { group ->
-                async(Dispatchers.IO) { sendGroup(hostIp, files.size, group) }
+                async(Dispatchers.IO) { sendGroup(hostIp, files.size, group, token) }
             }.map { runCatching { it.await() }.getOrDefault(false) }
 
             aggregator.setConnecting(false)
@@ -331,13 +360,14 @@ class FileSenderClient(private val context: Context) {
         }
     }
 
-    private fun sendGroup(hostIp: String, totalCount: Int, files: List<SendableFile>): Boolean {
+    private fun sendGroup(hostIp: String, totalCount: Int, files: List<SendableFile>, token: String? = null): Boolean {
         return try {
             SocketChannel.open(InetSocketAddress(hostIp, TRANSFER_PORT)).use { channel ->
                 val socket = channel.socket()
                 socket.tcpNoDelay = true
                 socket.sendBufferSize = SOCKET_BUF
                 val dout = DataOutputStream(java.io.BufferedOutputStream(socket.getOutputStream(), 64 * 1024))
+                writeToken(dout, token)
                 dout.writeInt(totalCount)
                 dout.writeInt(files.size)
                 dout.flush()

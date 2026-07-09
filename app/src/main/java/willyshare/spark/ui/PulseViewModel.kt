@@ -70,18 +70,26 @@ class PulseViewModel(application: Application) : AndroidViewModel(application) {
     val receiveTreeUri: StateFlow<String?> = storagePrefs.receiveTreeUri
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), null)
 
-    private val fileReceiver = FileReceiveServer {
-        val treeUriString = receiveTreeUri.value
-        val treeUri = treeUriString?.let { Uri.parse(it) }
-        if (treeUri != null && SafFileWriter.isAccessible(appContext, treeUri)) {
-            ReceiveTarget.Tree(appContext, treeUri)
-        } else {
-            // Public Downloads/PulseReceived - visible in Files/Downloads apps and to other
-            // apps, not the app-private Android/data/<package>/... sandbox that vanishes on
-            // uninstall and that nothing else can see.
-            ReceiveTarget.PublicDownloads(appContext)
-        }
-    }
+    /** Secret embedded in our own QR when we generate one - see FileReceiveServer's tokenProvider. */
+    private val sessionToken = MutableStateFlow<String?>(null)
+    /** Token from whatever QR we last scanned - presented back when we connect out to that device. */
+    private val remotePeerToken = MutableStateFlow<String?>(null)
+
+    private val fileReceiver = FileReceiveServer(
+        targetProvider = {
+            val treeUriString = receiveTreeUri.value
+            val treeUri = treeUriString?.let { Uri.parse(it) }
+            if (treeUri != null && SafFileWriter.isAccessible(appContext, treeUri)) {
+                ReceiveTarget.Tree(appContext, treeUri)
+            } else {
+                // Public Downloads/PulseReceived - visible in Files/Downloads apps and to other
+                // apps, not the app-private Android/data/<package>/... sandbox that vanishes on
+                // uninstall and that nothing else can see.
+                ReceiveTarget.PublicDownloads(appContext)
+            }
+        },
+        tokenProvider = { sessionToken.value }
+    )
 
     /** Human-readable label for Settings: either the default path or the picked folder's name. */
     fun receiveDestinationLabel(uriString: String?): String {
@@ -191,21 +199,7 @@ class PulseViewModel(application: Application) : AndroidViewModel(application) {
                     targetIp.value = info.groupOwnerAddress.hostAddress
                     targetPort.value = TRANSFER_PORT
                     targetSource.value = TargetSource.WIFI_DIRECT
-                    NotificationHelper.notifyConnectionStatus(appContext, connected = true, deviceName = targetName.value)
                 }
-            }
-        }
-        viewModelScope.launch {
-            // HOST side: only a real, non-empty client list counts as "someone connected."
-            wifiDirect.hostHasPeer.collect { hasPeer ->
-                if (hasPeer) {
-                    NotificationHelper.notifyConnectionStatus(appContext, connected = true, deviceName = "Nearby device")
-                }
-            }
-        }
-        viewModelScope.launch {
-            fileReceiver.senderConnected.collect { connected ->
-                if (connected) NotificationHelper.notifyConnectionStatus(appContext, connected = true, deviceName = "Nearby device")
             }
         }
         viewModelScope.launch {
@@ -223,6 +217,22 @@ class PulseViewModel(application: Application) : AndroidViewModel(application) {
             }
         }
         viewModelScope.launch {
+            // One place, one signal: fire the "device connected" notification exactly once
+            // per pairing session, the moment linkState leaves IDLE - not on every raw socket
+            // blip (the Stage 3 announce handshake opens and closes a connection before the
+            // real transfer socket lands, which used to double-fire this and desync from the
+            // on-screen state). Resets the moment we're back to IDLE so the next pairing can
+            // notify again.
+            linkState.collect { state ->
+                if (state != LinkState.IDLE && !hasNotifiedThisSession) {
+                    hasNotifiedThisSession = true
+                    NotificationHelper.notifyConnectionStatus(appContext, connected = true, deviceName = targetName.value ?: "Nearby device")
+                } else if (state == LinkState.IDLE) {
+                    hasNotifiedThisSession = false
+                }
+            }
+        }
+        viewModelScope.launch {
             // WAITING_TO_BE_FOUND side of the Stage 3 role swap: we generated the QR and are
             // sitting idle. Since we never scan, we can't learn the other device's address
             // the normal way - this is that address arriving instead, via the zero-file
@@ -233,7 +243,6 @@ class PulseViewModel(application: Application) : AndroidViewModel(application) {
                     targetPort.value = TRANSFER_PORT
                     targetSource.value = TargetSource.QR_PAIR
                     if (targetName.value == null) targetName.value = "Nearby device"
-                    NotificationHelper.notifyConnectionStatus(appContext, connected = true, deviceName = targetName.value)
                 }
             }
         }
@@ -267,7 +276,8 @@ class PulseViewModel(application: Application) : AndroidViewModel(application) {
         targetSource.value = TargetSource.NONE
         fastConnectStatus.value = null
         pairingRole.value = PairingRole.NONE
-        // NOTE: deliberately not calling SparkTransferService.stopIfIdle() here - receiving
+        sessionToken.value = null
+        remotePeerToken.value = null
         // is always-on now, so the foreground service must keep running regardless of a
         // send/pairing attempt being reset. It only ever stops in onCleared()/stopReceiving().
         // Receiving itself stays on (it's always-on now) - this only clears an in-progress
@@ -402,6 +412,11 @@ class PulseViewModel(application: Application) : AndroidViewModel(application) {
         val suffix = UUID.randomUUID().toString().take(4).uppercase()
         val networkName = "DIRECT-sk-Sparks$suffix"
         val passphrase = UUID.randomUUID().toString().replace("-", "").take(12)
+        // Fresh secret per QR - whoever scans this exact code can prove it on their first
+        // connection to us. A stale token from an earlier QR (before this refresh) stops
+        // working the instant this one is generated.
+        val token = QrPairing.newToken()
+        sessionToken.value = token
         // Wi-Fi Direct group creation works on every Android version via the plain
         // (non-band-forced) overload - it's the reliable primary path now, not gated
         // behind "High-speed Mode" or an existing shared Wi-Fi network. The old code only
@@ -411,9 +426,9 @@ class PulseViewModel(application: Application) : AndroidViewModel(application) {
             fastConnectStatus.value = message
             myQrPayload.value = when {
                 success -> QrPairing.buildFastConnectPayload(
-                    wifiDirect.thisDeviceName.value, ip ?: "0.0.0.0", TRANSFER_PORT, networkName, passphrase
+                    wifiDirect.thisDeviceName.value, ip ?: "0.0.0.0", TRANSFER_PORT, networkName, passphrase, token
                 )
-                ip != null -> QrPairing.buildPayload(wifiDirect.thisDeviceName.value, ip, TRANSFER_PORT)
+                ip != null -> QrPairing.buildPayload(wifiDirect.thisDeviceName.value, ip, TRANSFER_PORT, token)
                 else -> null
             }
         }
@@ -431,6 +446,7 @@ class PulseViewModel(application: Application) : AndroidViewModel(application) {
     fun applyScannedPayload(raw: String): Boolean {
         val parsed = QrPairing.parsePayload(raw) ?: return false
         targetName.value = parsed.deviceName
+        remotePeerToken.value = parsed.token
         // Always set the LAN ip/port bundled in the QR first. If this is a high-speed
         // (Wi-Fi Direct Fast Connect) code, the connectionInfo collector in init{}
         // will overwrite targetIp with the P2P group owner's address - the 5GHz link -
@@ -451,6 +467,8 @@ class PulseViewModel(application: Application) : AndroidViewModel(application) {
         targetName.value = null
         targetSource.value = TargetSource.NONE
         pairingRole.value = PairingRole.NONE
+        sessionToken.value = null
+        remotePeerToken.value = null
         wifiDirect.disconnect()
     }
 
@@ -472,6 +490,7 @@ class PulseViewModel(application: Application) : AndroidViewModel(application) {
     /** Backs out of "waiting to be found" without a connection ever landing - tears the group down. */
     fun cancelWaiting() {
         pairingRole.value = PairingRole.NONE
+        sessionToken.value = null
         wifiDirect.stopGroup()
     }
 
@@ -479,7 +498,7 @@ class PulseViewModel(application: Application) : AndroidViewModel(application) {
      *  so instead of pushing anything we just let the sender (who does) know our address. */
     fun announcePresenceToSender() {
         val ip = targetIp.value ?: return
-        fileSender.announce(ip)
+        fileSender.announce(ip, remotePeerToken.value)
     }
 
     // ---------- Receiving files ----------
@@ -523,6 +542,8 @@ class PulseViewModel(application: Application) : AndroidViewModel(application) {
 
     /** The in-flight send coroutine, if any - kept so [cancelTransferSession] can actually stop it. */
     private var transferJob: kotlinx.coroutines.Job? = null
+    /** Guards the unified "device connected" notification to one per pairing session - see the linkState collector in init{}. */
+    private var hasNotifiedThisSession = false
 
     fun startTransferSession(onComplete: (Boolean) -> Unit) {
         if (transferJob?.isActive == true) {
@@ -553,7 +574,7 @@ class PulseViewModel(application: Application) : AndroidViewModel(application) {
                 fromShareIntent = pendingSharedFiles.value
                 val sendables = fromMediaStore + fromBrowser + fromShareIntent
                 success = withContext(Dispatchers.IO) {
-                    fileSender.send(ip, sendables)
+                    fileSender.send(ip, sendables, remotePeerToken.value)
                 }
                 if (success) {
                     selected.forEach { f ->

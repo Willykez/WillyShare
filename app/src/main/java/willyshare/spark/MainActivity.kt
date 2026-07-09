@@ -195,20 +195,15 @@ class MainActivity : ComponentActivity() {
         // keeps running in the ViewModel regardless of which screen is on top, this just
         // keeps it visible and one tap away.
         val activeTransferKind by viewModel.activeTransferKind.collectAsState()
-        var panelDismissed by remember { mutableStateOf(false) }
-        LaunchedEffect(activeTransferKind) {
-          if (activeTransferKind != ActiveTransferKind.NONE) panelDismissed = false
-        }
         val panelHiddenByScreen = (currentScreen == "transfer" && activeTransferKind == ActiveTransferKind.SENDING) ||
           (currentScreen == "receive" && activeTransferKind == ActiveTransferKind.RECEIVING)
-        if (!panelDismissed && !panelHiddenByScreen) {
+        if (!panelHiddenByScreen) {
           val sendProgress by viewModel.sendProgress.collectAsState()
           val receiveProgress by viewModel.receiveProgress.collectAsState()
           FloatingTransferPanel(
             kind = activeTransferKind,
             progress = if (activeTransferKind == ActiveTransferKind.SENDING) sendProgress else receiveProgress,
-            onTap = { navigate(if (activeTransferKind == ActiveTransferKind.SENDING) "transfer" else "receive") },
-            onDismiss = { panelDismissed = true }
+            onTap = { navigate(if (activeTransferKind == ActiveTransferKind.SENDING) "transfer" else "receive") }
           )
         }
       }

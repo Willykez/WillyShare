@@ -11,13 +11,20 @@ import com.google.zxing.qrcode.decoder.ErrorCorrectionLevel
  * Encodes/decodes the small pairing payload embedded in the QR code shown on the
  * Receive screen.
  *
- * Two formats, both pipe-separated and both starting with "SPARKS":
- *  - LAN (original):    SPARKS|<deviceName>|<ip>|<port>
- *  - High-speed (P2P):  SPARKS|<deviceName>|<ip>|<port>|P2P|<networkName>|<passphrase>
+ * Formats, all pipe-separated, all starting with "SPARKS":
+ *  - LAN:        SPARKS|<deviceName>|<ip>|<port>|<token>
+ *  - High-speed: SPARKS|<deviceName>|<ip>|<port>|P2P|<networkName>|<passphrase>|<token>
+ *  (legacy 4/7-field forms without a trailing token are still accepted when parsing, so an
+ *  older build's QR doesn't just fail outright - token then comes back null, meaning "no
+ *  handshake proof available," same as before this existed.)
  *
  * The high-speed form still carries an <ip>/<port> pair as a same-network fallback
  * (some devices/OEMs reject Wi-Fi Direct Fast Connect), so older builds of this app -
  * or a scan that fails to join the P2P group - can still fall back to it.
+ *
+ * [token]: a random per-QR-refresh secret. Whoever scans this code is expected to present it
+ * back on their first connection - proves they actually scanned THIS code rather than just
+ * guessed or port-scanned the IP. See FileReceiveServer's tokenProvider.
  */
 object QrPairing {
     private const val PREFIX = "SPARKS"
@@ -28,14 +35,15 @@ object QrPairing {
         val ip: String,
         val port: Int,
         val fastConnectNetworkName: String? = null,
-        val fastConnectPassphrase: String? = null
+        val fastConnectPassphrase: String? = null,
+        val token: String? = null
     ) {
         val isFastConnect: Boolean get() = fastConnectNetworkName != null && fastConnectPassphrase != null
     }
 
-    fun buildPayload(deviceName: String, ip: String, port: Int = TRANSFER_PORT): String {
+    fun buildPayload(deviceName: String, ip: String, port: Int = TRANSFER_PORT, token: String): String {
         val safeName = deviceName.replace("|", " ")
-        return "$PREFIX|$safeName|$ip|$port"
+        return "$PREFIX|$safeName|$ip|$port|$token"
     }
 
     /** Same as [buildPayload] but also carries high-speed Wi-Fi Direct group credentials. */
@@ -44,28 +52,34 @@ object QrPairing {
         ip: String,
         port: Int = TRANSFER_PORT,
         networkName: String,
-        passphrase: String
+        passphrase: String,
+        token: String
     ): String {
         val safeName = deviceName.replace("|", " ")
-        return "$PREFIX|$safeName|$ip|$port|$MODE_P2P|$networkName|$passphrase"
+        return "$PREFIX|$safeName|$ip|$port|$MODE_P2P|$networkName|$passphrase|$token"
     }
 
     fun parsePayload(raw: String): Payload? {
         val parts = raw.trim().split("|")
-        if (parts.size != 4 && parts.size != 7) return null
+        if (parts.size !in setOf(4, 5, 7, 8)) return null
         if (parts[0] != PREFIX) return null
         val port = parts[3].toIntOrNull() ?: return null
         if (parts[2].isBlank()) return null
-        return if (parts.size == 7 && parts[4] == MODE_P2P) {
-            if (parts[5].isBlank() || parts[6].isBlank()) return null
-            Payload(
-                deviceName = parts[1], ip = parts[2], port = port,
-                fastConnectNetworkName = parts[5], fastConnectPassphrase = parts[6]
-            )
-        } else {
-            Payload(deviceName = parts[1], ip = parts[2], port = port)
+        return when {
+            parts.size >= 7 && parts[4] == MODE_P2P -> {
+                if (parts[5].isBlank() || parts[6].isBlank()) return null
+                Payload(
+                    deviceName = parts[1], ip = parts[2], port = port,
+                    fastConnectNetworkName = parts[5], fastConnectPassphrase = parts[6],
+                    token = parts.getOrNull(7)
+                )
+            }
+            else -> Payload(deviceName = parts[1], ip = parts[2], port = port, token = parts.getOrNull(4))
         }
     }
+
+    /** Fresh per-QR-refresh secret - short enough to stay cheap over the wire, random enough that guessing it isn't practical. */
+    fun newToken(): String = java.util.UUID.randomUUID().toString().replace("-", "").take(16)
 
     fun generateQrBitmap(content: String, sizePx: Int = 720): Bitmap {
         val hints = mapOf(
