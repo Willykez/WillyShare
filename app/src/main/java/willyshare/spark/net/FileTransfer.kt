@@ -10,9 +10,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import java.io.DataInputStream
 import java.io.DataOutputStream
-import java.io.File
 import java.io.FileInputStream
-import java.io.FileOutputStream
 import java.net.InetSocketAddress
 import java.nio.channels.ServerSocketChannel
 import java.nio.channels.SocketChannel
@@ -123,9 +121,10 @@ private class ProgressAggregator {
     fun setConnecting(v: Boolean) { flow.value = flow.value.copy(isConnecting = v) }
 }
 
-/** Where received files get written: the app's default folder, or a user-chosen SAF tree. */
+/** Where received files get written: the public Downloads folder (default), or a user-chosen SAF tree. */
 sealed interface ReceiveTarget {
-    data class Plain(val dir: File) : ReceiveTarget
+    /** Default destination - public Downloads/[subfolder], visible outside the app. */
+    data class PublicDownloads(val context: Context, val subfolder: String = "PulseReceived") : ReceiveTarget
     data class Tree(val context: Context, val treeUri: Uri) : ReceiveTarget
 }
 
@@ -151,7 +150,6 @@ class FileReceiveServer(private val targetProvider: () -> ReceiveTarget) {
         if (running) return
         running = true
         aggregator.reset()
-        (targetProvider() as? ReceiveTarget.Plain)?.dir?.mkdirs()
         Thread {
             try {
                 val server = ServerSocketChannel.open()
@@ -204,12 +202,21 @@ class FileReceiveServer(private val targetProvider: () -> ReceiveTarget) {
                 val startTime = System.currentTimeMillis()
 
                 val (outputStream, savedPath) = openSink(relPath)
-                (outputStream as FileOutputStream).channel.use { fc ->
+                outputStream.use { out ->
+                    // Generic byte-channel copy - works for a real FileOutputStream (fast path,
+                    // File-backed) as much as for a ContentResolver-backed stream (SAF Tree,
+                    // or the default MediaStore Downloads sink), neither of which is actually
+                    // a java.io.FileOutputStream under the hood.
+                    val sink = java.nio.channels.Channels.newChannel(out)
+                    val buffer = java.nio.ByteBuffer.allocateDirect(CHUNK_SIZE)
                     var pos = 0L
                     while (pos < size) {
-                        val toRead = minOf(CHUNK_SIZE.toLong(), size - pos)
-                        val n = fc.transferFrom(ch, pos, toRead)
+                        buffer.clear()
+                        buffer.limit(minOf(CHUNK_SIZE.toLong(), size - pos).toInt())
+                        val n = ch.read(buffer)
                         if (n <= 0) break
+                        buffer.flip()
+                        while (buffer.hasRemaining()) sink.write(buffer)
                         pos += n
                         val elapsed = (System.currentTimeMillis() - startTime).coerceAtLeast(1) / 1000.0
                         aggregator.update(FileProgressItem(key, relPath, size, pos, pos / elapsed))
@@ -224,10 +231,7 @@ class FileReceiveServer(private val targetProvider: () -> ReceiveTarget) {
     /** Opens an output stream for [relPath] under whichever [target] is configured, returning where it landed. */
     private fun openSink(relPath: String): Pair<java.io.OutputStream, String> {
         return when (val t = targetProvider()) {
-            is ReceiveTarget.Plain -> {
-                val destFile = uniquePlainFile(t.dir, relPath)
-                FileOutputStream(destFile) to destFile.absolutePath
-            }
+            is ReceiveTarget.PublicDownloads -> PublicDownloadsWriter.openSink(t.context, t.subfolder, relPath)
             is ReceiveTarget.Tree -> {
                 val leaf = SafFileWriter.createUniqueFile(t.context, t.treeUri, relPath)
                 val stream = t.context.contentResolver.openOutputStream(leaf.uri, "w")
@@ -243,21 +247,6 @@ class FileReceiveServer(private val targetProvider: () -> ReceiveTarget) {
             .map { it.replace(Regex("[\\\\/:*?\"<>|]"), "_").trim() }
             .filter { it.isNotBlank() && it != "." && it != ".." }
         return if (segments.isEmpty()) "received_file" else segments.joinToString("/")
-    }
-
-    private fun uniquePlainFile(dir: File, relPath: String): File {
-        val destination = File(dir, relPath)
-        destination.parentFile?.mkdirs()
-        if (!destination.exists()) return destination
-        val name = destination.name
-        val parent = destination.parentFile ?: dir
-        val dot = name.lastIndexOf('.')
-        val base = if (dot > 0) name.substring(0, dot) else name
-        val ext = if (dot > 0) name.substring(dot) else ""
-        var i = 1
-        var candidate = File(parent, "$base ($i)$ext")
-        while (candidate.exists()) { i++; candidate = File(parent, "$base ($i)$ext") }
-        return candidate
     }
 
     fun stop() {
