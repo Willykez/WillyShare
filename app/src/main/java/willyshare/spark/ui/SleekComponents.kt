@@ -40,9 +40,13 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.Home
+import androidx.compose.material.icons.filled.Pause
+import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material3.IconButton
 import androidx.compose.material.icons.outlined.History
 import androidx.compose.material.icons.outlined.Home
 import androidx.compose.material.icons.outlined.Settings
@@ -584,12 +588,12 @@ fun FileProgressRow(
             if (showControls) {
                 Spacer(modifier = Modifier.width(6.dp))
                 if (onTogglePause != null) {
-                    androidx.compose.material3.IconButton(
+                    IconButton(
                         onClick = onTogglePause,
                         modifier = Modifier.size(26.dp)
                     ) {
                         Icon(
-                            imageVector = if (item.isPaused) androidx.compose.material.icons.Icons.Default.PlayArrow else androidx.compose.material.icons.Icons.Default.Pause,
+                            imageVector = if (item.isPaused) Icons.Default.PlayArrow else Icons.Default.Pause,
                             contentDescription = if (item.isPaused) "Resume" else "Pause",
                             tint = SleekPrimary,
                             modifier = Modifier.size(16.dp)
@@ -597,12 +601,12 @@ fun FileProgressRow(
                     }
                 }
                 if (onCancel != null) {
-                    androidx.compose.material3.IconButton(
+                    IconButton(
                         onClick = onCancel,
                         modifier = Modifier.size(26.dp)
                     ) {
                         Icon(
-                            imageVector = androidx.compose.material.icons.Icons.Default.Close,
+                            imageVector = Icons.Default.Close,
                             contentDescription = "Cancel",
                             tint = cancelColor,
                             modifier = Modifier.size(16.dp)
