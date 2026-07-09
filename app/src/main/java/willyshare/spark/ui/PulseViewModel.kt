@@ -3,7 +3,6 @@ package willyshare.spark.ui
 import android.app.Application
 import android.net.Uri
 import android.net.wifi.p2p.WifiP2pDevice
-import android.os.Environment
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import willyshare.spark.data.FileItemEntity
@@ -63,11 +62,6 @@ class PulseViewModel(application: Application) : AndroidViewModel(application) {
     // ---- Real networking components ----
     val wifiDirect = WifiDirectManager(application)
     private val fileSender = FileSenderClient(application)
-    private val defaultReceiveDir: File
-        get() = File(
-            appContext.getExternalFilesDir(Environment.DIRECTORY_DOWNLOADS),
-            "PulseReceived"
-        ).apply { mkdirs() }
 
     /** Where a custom "save received files to" folder currently points, or null for the app default. */
     val receiveTreeUri: StateFlow<String?> = storagePrefs.receiveTreeUri
@@ -79,7 +73,10 @@ class PulseViewModel(application: Application) : AndroidViewModel(application) {
         if (treeUri != null && SafFileWriter.isAccessible(appContext, treeUri)) {
             ReceiveTarget.Tree(appContext, treeUri)
         } else {
-            ReceiveTarget.Plain(defaultReceiveDir)
+            // Public Downloads/PulseReceived - visible in Files/Downloads apps and to other
+            // apps, not the app-private Android/data/<package>/... sandbox that vanishes on
+            // uninstall and that nothing else can see.
+            ReceiveTarget.PublicDownloads(appContext)
         }
     }
 
