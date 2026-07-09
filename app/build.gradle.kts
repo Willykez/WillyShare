@@ -10,11 +10,11 @@ plugins {
 }
 
 android {
-  namespace = "willyshare.spark"
+  namespace = "com.willyshare.willykez"
   compileSdk { version = release(36) { minorApiLevel = 1 } }
 
   defaultConfig {
-    applicationId = "willyshare.spark"
+    applicationId = "com.willyshare.willykez"
     minSdk = 24
     targetSdk = 36
     versionCode = 1

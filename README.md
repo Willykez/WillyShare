@@ -85,7 +85,7 @@ Built from the ground up with **Jetpack Compose**, a custom Material 3 `SleekPal
 
 ```
 Spark-Share/
-├── app/src/main/java/willyshare/spark/
+├── app/src/main/java/com/willyshare/willykez/
 │   ├── MainActivity.kt                  # Single-Activity host; back-stack nav, AnimatedContent routing
 │   │
 │   ├── net/
@@ -246,7 +246,7 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND.
 
 **Developer:** Willykez  
 **GitHub:** [@Willykez](https://github.com/Willykez)  
-**Package:** `willyshare.spark`
+**Package:** `com.willyshare.willykez`
 
 ---
 
