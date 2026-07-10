@@ -300,6 +300,11 @@ class PulseViewModel(application: Application) : AndroidViewModel(application) {
         viewModelScope.launch { dao.updateFileSelection(fileId, !currentSelected) }
     }
 
+    /** Select All / Deselect All for the SelectFilesScreen's current tab - pass "" for the "All" tab. */
+    fun setSelectionForCategory(category: String, selected: Boolean) {
+        viewModelScope.launch { dao.setSelectionForCategory(category, selected) }
+    }
+
     fun clearSelections() {
         viewModelScope.launch { dao.clearAllSelections() }
     }
@@ -531,12 +536,25 @@ class PulseViewModel(application: Application) : AndroidViewModel(application) {
         SparkTransferService.stopIfIdle(appContext)
     }
 
-    private fun displayNameFromSavedPath(savedPath: String): String =
-        if (savedPath.startsWith("content://")) {
-            Uri.parse(savedPath).lastPathSegment?.substringAfterLast('/') ?: "received_file"
-        } else {
-            File(savedPath).name
+    private fun displayNameFromSavedPath(savedPath: String): String {
+        if (!savedPath.startsWith("content://")) return File(savedPath).name
+        // A content:// URI's last path segment is NOT reliably the filename - for a
+        // MediaStore item (our default Downloads/PulseReceived sink) it's the numeric row
+        // ID (e.g. content://media/external/downloads/45175 -> "45175"), which is exactly
+        // why history was showing plain numbers instead of real names. DISPLAY_NAME is the
+        // one column both MediaStore and SAF document providers agree on.
+        val uri = Uri.parse(savedPath)
+        return try {
+            appContext.contentResolver.query(uri, arrayOf(android.provider.OpenableColumns.DISPLAY_NAME), null, null, null)?.use { cursor ->
+                if (cursor.moveToFirst()) {
+                    val idx = cursor.getColumnIndex(android.provider.OpenableColumns.DISPLAY_NAME)
+                    if (idx >= 0) cursor.getString(idx) else null
+                } else null
+            } ?: uri.lastPathSegment?.substringAfterLast('/') ?: "received_file"
+        } catch (_: Exception) {
+            uri.lastPathSegment?.substringAfterLast('/') ?: "received_file"
         }
+    }
 
     // ---------- Sending files ----------
 
@@ -587,7 +605,8 @@ class PulseViewModel(application: Application) : AndroidViewModel(application) {
                                 timestamp = System.currentTimeMillis(),
                                 deviceName = targetName.value ?: "Nearby device",
                                 isSend = true,
-                                status = "COMPLETED"
+                                status = "COMPLETED",
+                                sourceUri = f.uri
                             )
                         )
                     }
@@ -601,7 +620,8 @@ class PulseViewModel(application: Application) : AndroidViewModel(application) {
                                 timestamp = System.currentTimeMillis(),
                                 deviceName = targetName.value ?: "Nearby device",
                                 isSend = true,
-                                status = "COMPLETED"
+                                status = "COMPLETED",
+                                sourceUri = f.uri.toString()
                             )
                         )
                     }

@@ -373,6 +373,7 @@ fun TransferItemRow(
             verticalAlignment = Alignment.CenterVertically,
             modifier = Modifier.weight(1f)
         ) {
+            val thumbSource = if (transfer.isSend) transfer.sourceUri else transfer.savedPath
             Box(
                 modifier = Modifier
                     .size(44.dp)
@@ -380,7 +381,18 @@ fun TransferItemRow(
                     .background(iconBg),
                 contentAlignment = Alignment.Center
             ) {
-                Icon(categoryIcon, contentDescription = null, tint = SleekOnSurface, modifier = Modifier.size(22.dp))
+                if (transfer.category == "PHOTO" && !thumbSource.isNullOrBlank()) {
+                    coil.compose.SubcomposeAsyncImage(
+                        model = thumbSource,
+                        contentDescription = null,
+                        contentScale = androidx.compose.ui.layout.ContentScale.Crop,
+                        modifier = Modifier.size(44.dp).clip(MaterialTheme.shapes.small),
+                        loading = { Icon(categoryIcon, contentDescription = null, tint = SleekOnSurface, modifier = Modifier.size(22.dp)) },
+                        error = { Icon(categoryIcon, contentDescription = null, tint = SleekOnSurface, modifier = Modifier.size(22.dp)) }
+                    )
+                } else {
+                    Icon(categoryIcon, contentDescription = null, tint = SleekOnSurface, modifier = Modifier.size(22.dp))
+                }
             }
             Spacer(modifier = Modifier.width(14.dp))
             Column {

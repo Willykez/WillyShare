@@ -39,4 +39,7 @@ interface PulseDao {
 
     @Query("UPDATE available_files SET isSelected = 0")
     suspend fun clearAllSelections()
+
+    @Query("UPDATE available_files SET isSelected = :selected WHERE category = :category COLLATE NOCASE OR :category = ''")
+    suspend fun setSelectionForCategory(category: String, selected: Boolean)
 }

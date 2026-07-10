@@ -45,6 +45,8 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.CheckBox
+import androidx.compose.material.icons.filled.CheckBoxOutlineBlank
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.GridView
 import androidx.compose.material.icons.filled.SwapVert
@@ -300,6 +302,20 @@ fun SelectFilesScreen(
                             color = SleekOnSurfaceVariant
                         )
                         Row(verticalAlignment = Alignment.CenterVertically) {
+                            val allSelectedInTab = filteredFiles.isNotEmpty() && filteredFiles.all { it.isSelected }
+                            IconButton(
+                                onClick = {
+                                    val categoryArg = if (currentTab.equals("All", ignoreCase = true)) "" else currentTab
+                                    viewModel.setSelectionForCategory(categoryArg, !allSelectedInTab)
+                                },
+                                modifier = Modifier.size(32.dp)
+                            ) {
+                                Icon(
+                                    if (allSelectedInTab) Icons.Default.CheckBox else Icons.Default.CheckBoxOutlineBlank,
+                                    contentDescription = if (allSelectedInTab) "Deselect all" else "Select all",
+                                    tint = SleekOnSurfaceVariant
+                                )
+                            }
                             Box {
                                 IconButton(onClick = { sortMenuExpanded = true }, modifier = Modifier.size(32.dp)) {
                                     Icon(Icons.Default.SwapVert, contentDescription = "Sort", tint = SleekOnSurfaceVariant)

@@ -13,5 +13,6 @@ data class TransferEntity(
     val deviceName: String,
     val isSend: Boolean,
     val status: String, // COMPLETED, FAILED, IN_PROGRESS
-    val savedPath: String? = null // Where a received file was written on disk
+    val savedPath: String? = null, // Where a received file was written on disk
+    val sourceUri: String? = null // Where a sent file was read from - lets history show a real thumbnail
 )

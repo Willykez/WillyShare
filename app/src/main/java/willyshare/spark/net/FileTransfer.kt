@@ -128,6 +128,33 @@ sealed interface ReceiveTarget {
     data class Tree(val context: Context, val treeUri: Uri) : ReceiveTarget
 }
 
+/**
+ * Where a received file's name puts it on disk: Downloads/PulseReceived/<category>/<name>
+ * instead of everything landing in one flat folder. Deliberately coarse (extension-based,
+ * same categories already used for Transfer History) rather than sniffing MIME types - fast,
+ * good enough, and consistent with how the rest of the app already buckets files.
+ */
+object FileCategorizer {
+    fun subfolderFor(name: String): String = when {
+        name.endsWith(".jpg", true) || name.endsWith(".jpeg", true) || name.endsWith(".png", true) ||
+            name.endsWith(".gif", true) || name.endsWith(".webp", true) || name.endsWith(".heic", true) -> "Images"
+        name.endsWith(".mp4", true) || name.endsWith(".mov", true) || name.endsWith(".mkv", true) ||
+            name.endsWith(".webm", true) || name.endsWith(".3gp", true) -> "Videos"
+        name.endsWith(".mp3", true) || name.endsWith(".m4a", true) || name.endsWith(".wav", true) ||
+            name.endsWith(".ogg", true) || name.endsWith(".flac", true) -> "Audio"
+        name.endsWith(".apk", true) -> "Apps"
+        name.endsWith(".zip", true) || name.endsWith(".rar", true) || name.endsWith(".7z", true) ||
+            name.endsWith(".tar", true) || name.endsWith(".gz", true) -> "Archives"
+        else -> "Documents"
+    }
+
+    /** Prepends the category folder as the first path segment, keeping any existing subfolder structure after it. */
+    fun categorize(relPath: String): String {
+        val name = relPath.substringAfterLast('/')
+        return "${subfolderFor(name)}/$relPath"
+    }
+}
+
 class FileReceiveServer(
     private val targetProvider: () -> ReceiveTarget,
     private val tokenProvider: () -> String? = { null }
@@ -223,7 +250,7 @@ class FileReceiveServer(
                 val key = "${ch.hashCode()}_$relPath"
                 val startTime = System.currentTimeMillis()
 
-                val (outputStream, savedPath) = openSink(relPath)
+                val (outputStream, savedPath) = openSink(FileCategorizer.categorize(relPath))
                 outputStream.use { out ->
                     // Generic byte-channel copy - works for a real FileOutputStream (fast path,
                     // File-backed) as much as for a ContentResolver-backed stream (SAF Tree,
