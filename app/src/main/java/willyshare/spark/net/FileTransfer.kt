@@ -88,13 +88,30 @@ private class ProgressAggregator {
     private var lastEmit = 0L
 
     fun reset() {
-        items.clear()
-        _expectedTotal = -1
-        flow.value = TransferProgress()
+        synchronized(this) {
+            items.clear()
+            _expectedTotal = -1
+            flow.value = TransferProgress()
+        }
     }
 
-    fun initExpectedTotal(n: Int) {
-        if (_expectedTotal < 0) _expectedTotal = n
+    /**
+     * Like [reset] + set-total combined, but only when it's actually needed: if the last
+     * transfer already finished (or this is the very first one), start completely fresh.
+     * If it's still the same transfer in progress (sibling parallel-stream connections
+     * calling this with the same total), this is a no-op - their in-flight items must
+     * survive. Synchronized because multiple parallel connections for the same new
+     * transfer can all race in here at once; without serializing, a slightly-later
+     * connection could wipe out progress a slightly-earlier one already started reporting.
+     */
+    fun beginTransferIfNeeded(totalCount: Int) {
+        synchronized(this) {
+            if (_expectedTotal < 0 || flow.value.isComplete) {
+                items.clear()
+                _expectedTotal = totalCount
+                flow.value = TransferProgress()
+            }
+        }
     }
 
     fun update(item: FileProgressItem, force: Boolean = false) {
@@ -195,12 +212,11 @@ class FileReceiveServer(
                     val s = client.socket()
                     s.tcpNoDelay = true
                     s.receiveBufferSize = SOCKET_BUF
-                    _peerConnectedIp.value = s.inetAddress?.hostAddress
                     activeStreams.incrementAndGet()
                     _senderConnected.value = true
                     pool.execute {
                         try {
-                            handleClient(client, onFileReceived)
+                            handleClient(client, s.inetAddress?.hostAddress, onFileReceived)
                         } catch (t: Throwable) {
                             aggregator.setError(t.message ?: "Receive failed")
                         } finally {
@@ -216,7 +232,7 @@ class FileReceiveServer(
         }.apply { isDaemon = true }.start()
     }
 
-    private fun handleClient(channel: SocketChannel, onFileReceived: (String, Long) -> Unit) {
+    private fun handleClient(channel: SocketChannel, remoteIp: String?, onFileReceived: (String, Long) -> Unit) {
         channel.use { ch ->
             val din = DataInputStream(ch.socket().getInputStream())
 
@@ -237,9 +253,15 @@ class FileReceiveServer(
                 // perfectly fine, separate legitimate session.
                 return@use
             }
+            // Only now - proven legitimate (or no token was required at all) - does this
+            // count as "someone found me." This used to fire the instant any TCP connection
+            // landed, before this check even ran, which is exactly how an unrelated/bogus
+            // connection could make the sender think a receiver had connected when nothing
+            // legitimate had happened yet.
+            _peerConnectedIp.value = remoteIp
 
             val totalCount = din.readInt()
-            aggregator.initExpectedTotal(totalCount)   // ← FIXED HERE
+            aggregator.beginTransferIfNeeded(totalCount)   // ← FIXED HERE
             val fileCount = din.readInt()
             repeat(fileCount) {
                 val nameLen = din.readInt().coerceIn(0, 4096)
@@ -358,7 +380,7 @@ class FileSenderClient(private val context: Context) {
         pausedKeys.clear()
         cancelledKeys.clear()
         aggregator.reset()
-        aggregator.initExpectedTotal(files.size)   // ← FIXED HERE
+        aggregator.beginTransferIfNeeded(files.size)   // ← FIXED HERE
         aggregator.setConnecting(true)
         aggregator.emit()
 

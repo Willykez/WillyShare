@@ -115,12 +115,17 @@ fun SendScreen(
     }
 
     LaunchedEffect(targetIp, targetSource) {
-        if (targetIp != null && targetSource == TargetSource.WIFI_DIRECT) {
+        if (targetIp != null && targetSource != TargetSource.NONE) {
             // "Pick files first" flow: the cart already has something queued (picked from
             // Choose Files, the folder browser, or a share-sheet hand-off) - skip the picker
             // entirely and go straight to sending, exactly like Quick Share does once a
             // target is found. Otherwise, this is the original "connect first" flow: go pick
             // files now that we know who we're sending to.
+            //
+            // Also covers "send files back": pairing isn't torn down when a transfer
+            // finishes, so a device that was on the receiving end a moment ago - targetSource
+            // is still QR_PAIR from having scanned - lands here too and can push something
+            // back over the same live connection instead of re-pairing from scratch.
             onNavigate(if (hasPendingCart) "transfer" else "select")
         }
     }

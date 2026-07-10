@@ -41,7 +41,7 @@ enum class TargetSource { WIFI_DIRECT, QR_PAIR, NONE }
 
 /**
  * Single, unified "what's going on right now" signal - replaces having to separately check
- * targetSource / hostHasPeer / senderConnected / progress in every screen to answer the
+ * targetSource / senderConnected / progress in every screen to answer the
  * same question. This is step one of the state-machine work; screens can adopt it
  * incrementally.
  */
@@ -177,12 +177,12 @@ class PulseViewModel(application: Application) : AndroidViewModel(application) {
 
     /** One combined signal for "what's going on right now," usable from any screen. */
     val linkState: StateFlow<LinkState> = combine(
-        targetSource, wifiDirect.hostHasPeer, fileReceiver.senderConnected, sendProgress, receiveProgress
-    ) { source, hostPeer, senderConn, sendP, recvP ->
+        targetSource, fileReceiver.senderConnected, sendProgress, receiveProgress
+    ) { source, senderConn, sendP, recvP ->
         when {
             (sendP.overallTotal > 0 && !sendP.isComplete) || (recvP.overallTotal > 0 && !recvP.isComplete) ->
                 LinkState.TRANSFERRING
-            source != TargetSource.NONE || hostPeer || senderConn -> LinkState.CONNECTED
+            source != TargetSource.NONE || senderConn -> LinkState.CONNECTED
             else -> LinkState.IDLE
         }
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), LinkState.IDLE)
@@ -195,10 +195,18 @@ class PulseViewModel(application: Application) : AndroidViewModel(application) {
                 // own solo group (zero peers yet) - that used to be misread as "connected"
                 // the moment the QR screen opened. Only trust this signal when we are
                 // definitely the joining client of someone else's group.
-                if (info != null && info.groupFormed && !info.isGroupOwner && info.groupOwnerAddress != null) {
-                    targetIp.value = info.groupOwnerAddress.hostAddress
+                if (info != null && info.groupFormed && !info.isGroupOwner && info.groupOwnerAddress != null && targetSource.value != TargetSource.WIFI_DIRECT) {
+                    val hostAddress = info.groupOwnerAddress.hostAddress
+                    targetIp.value = hostAddress
                     targetPort.value = TRANSFER_PORT
                     targetSource.value = TargetSource.WIFI_DIRECT
+                    // Peer-list connect (no QR, no token exchanged) has no equivalent of the
+                    // scanner's announcePresenceToSender() - without this, the other device
+                    // (now the passive group owner) has no way to know we actually landed;
+                    // it used to rely on the raw, unauthenticated hostHasPeer signal for that,
+                    // which is exactly what let an unrelated ambient P2P connection show as
+                    // "Connected" on a screen that had nothing to do with it.
+                    if (hostAddress != null) fileSender.announce(hostAddress, null)
                 }
             }
         }
