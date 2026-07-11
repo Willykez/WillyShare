@@ -372,6 +372,14 @@ class PulseViewModel(application: Application) : AndroidViewModel(application) {
         browseSelectionSummary.value = 0 to 0L
     }
 
+    /** Select All / Deselect All for whatever's currently visible in the folder browser. */
+    fun setBrowseSelectionForVisible(nodes: List<LocalFileNode>, selected: Boolean) {
+        val (dirs, files) = nodes.partition { it.isDirectory }
+        browseSelectedFolders.value = if (selected) browseSelectedFolders.value + dirs.map { it.path } else browseSelectedFolders.value - dirs.map { it.path }.toSet()
+        browseSelectedFiles.value = if (selected) browseSelectedFiles.value + files.map { it.path } else browseSelectedFiles.value - files.map { it.path }.toSet()
+        refreshBrowseSelectionSummary()
+    }
+
     private fun refreshBrowseSelectionSummary() {
         val files = browseSelectedFiles.value
         val folders = browseSelectedFolders.value

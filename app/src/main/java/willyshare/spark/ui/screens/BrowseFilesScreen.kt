@@ -14,6 +14,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -22,15 +23,25 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.grid.GridCells
+import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
+import androidx.compose.foundation.lazy.grid.items as gridItems
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.CheckBox
+import androidx.compose.material.icons.filled.CheckBoxOutlineBlank
 import androidx.compose.material.icons.filled.ChevronRight
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.GridView
+import androidx.compose.material.icons.filled.SwapVert
+import androidx.compose.material.icons.filled.ViewList
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.Scaffold
@@ -67,6 +78,20 @@ import willyshare.spark.ui.theme.SleekOutline
 import willyshare.spark.ui.theme.SleekPrimary
 import willyshare.spark.ui.theme.SleekSurfaceContainer
 
+private enum class BrowseSortOption { NAME, SIZE_LARGEST, NEWEST }
+
+private fun sortEntries(entries: List<LocalFileNode>, option: BrowseSortOption): List<LocalFileNode> {
+    // Folders first regardless of sort choice - matches how every OS file browser behaves,
+    // and how the file picker screen already sorts.
+    val (dirs, files) = entries.partition { it.isDirectory }
+    val comparator = when (option) {
+        BrowseSortOption.NAME -> compareBy<LocalFileNode> { it.name.lowercase() }
+        BrowseSortOption.SIZE_LARGEST -> compareByDescending { it.sizeBytes }
+        BrowseSortOption.NEWEST -> compareByDescending { it.lastModified }
+    }
+    return dirs.sortedBy { it.name.lowercase() } + files.sortedWith(comparator)
+}
+
 @Composable
 fun BrowseFilesScreen(
     viewModel: PulseViewModel,
@@ -91,11 +116,20 @@ fun BrowseFilesScreen(
     }
 
     val pathStack by viewModel.browsePathStack.collectAsState()
-    val entries by viewModel.browseEntries.collectAsState()
+    val entriesRaw by viewModel.browseEntries.collectAsState()
     val loading by viewModel.browseLoading.collectAsState()
     val selectedFiles by viewModel.browseSelectedFiles.collectAsState()
     val selectedFolders by viewModel.browseSelectedFolders.collectAsState()
     val summary by viewModel.browseSelectionSummary.collectAsState()
+
+    var isGridView by remember { mutableStateOf(false) }
+    var sortOption by remember { mutableStateOf(BrowseSortOption.NAME) }
+    var sortMenuExpanded by remember { mutableStateOf(false) }
+
+    val entries = remember(entriesRaw, sortOption) { sortEntries(entriesRaw, sortOption) }
+    val allVisibleSelected = entries.isNotEmpty() && entries.all {
+        if (it.isDirectory) it.path in selectedFolders else it.path in selectedFiles
+    }
 
     // Folder-up takes priority over leaving the screen while we're a level deep.
     BackHandler(enabled = pathStack.isNotEmpty()) { viewModel.browseUp() }
@@ -111,6 +145,51 @@ fun BrowseFilesScreen(
                     showBack = true,
                     onBack = { if (!viewModel.browseUp()) onNavigate("select") }
                 )
+
+                if (storageAccessGranted && pathStack.isNotEmpty() && !loading && entries.isNotEmpty()) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth().padding(horizontal = 20.dp).padding(bottom = 4.dp),
+                        horizontalArrangement = Arrangement.End,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        IconButton(
+                            onClick = { viewModel.setBrowseSelectionForVisible(entries, !allVisibleSelected) },
+                            modifier = Modifier.size(32.dp)
+                        ) {
+                            Icon(
+                                if (allVisibleSelected) Icons.Default.CheckBox else Icons.Default.CheckBoxOutlineBlank,
+                                contentDescription = if (allVisibleSelected) "Deselect all" else "Select all",
+                                tint = SleekOnSurfaceVariant
+                            )
+                        }
+                        Box {
+                            IconButton(onClick = { sortMenuExpanded = true }, modifier = Modifier.size(32.dp)) {
+                                Icon(Icons.Default.SwapVert, contentDescription = "Sort", tint = SleekOnSurfaceVariant)
+                            }
+                            DropdownMenu(expanded = sortMenuExpanded, onDismissRequest = { sortMenuExpanded = false }) {
+                                DropdownMenuItem(
+                                    text = { Text("Name (A-Z)") },
+                                    onClick = { sortOption = BrowseSortOption.NAME; sortMenuExpanded = false }
+                                )
+                                DropdownMenuItem(
+                                    text = { Text("Largest first") },
+                                    onClick = { sortOption = BrowseSortOption.SIZE_LARGEST; sortMenuExpanded = false }
+                                )
+                                DropdownMenuItem(
+                                    text = { Text("Newest first") },
+                                    onClick = { sortOption = BrowseSortOption.NEWEST; sortMenuExpanded = false }
+                                )
+                            }
+                        }
+                        IconButton(onClick = { isGridView = !isGridView }, modifier = Modifier.size(32.dp)) {
+                            Icon(
+                                if (isGridView) Icons.Default.ViewList else Icons.Default.GridView,
+                                contentDescription = if (isGridView) "Switch to list view" else "Switch to grid view",
+                                tint = SleekOnSurfaceVariant
+                            )
+                        }
+                    }
+                }
 
                 if (!storageAccessGranted) {
                     StoragePermissionRationale(
@@ -145,6 +224,27 @@ fun BrowseFilesScreen(
                         Icon(willyshare.spark.ui.PulseIcons.FolderOpenEmpty, contentDescription = null, tint = SleekOnSurfaceVariant.copy(alpha = 0.5f), modifier = Modifier.size(40.dp))
                         Spacer(modifier = Modifier.height(10.dp))
                         Text("This folder is empty", fontSize = 14.sp, fontWeight = FontWeight.Bold, color = SleekOnSurface)
+                    }
+                } else if (isGridView) {
+                    LazyVerticalGrid(
+                        columns = GridCells.Fixed(3),
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .padding(horizontal = 16.dp)
+                            .padding(bottom = if (summary.first > 0) 130.dp else 10.dp),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        gridItems(entries, key = { it.path }) { node ->
+                            BrowseEntryGridCell(
+                                node = node,
+                                isChecked = if (node.isDirectory) node.path in selectedFolders else node.path in selectedFiles,
+                                onCheckToggle = {
+                                    if (node.isDirectory) viewModel.toggleBrowseFolder(node.path) else viewModel.toggleBrowseFile(node.path)
+                                },
+                                onOpen = { if (node.isDirectory) viewModel.browseInto(node) }
+                            )
+                        }
                     }
                 } else {
                     LazyColumn(
@@ -289,6 +389,58 @@ private fun BrowseEntryRow(
         }
         if (node.isDirectory) {
             Icon(Icons.Default.ChevronRight, contentDescription = null, tint = SleekOnSurfaceVariant.copy(alpha = 0.5f), modifier = Modifier.size(18.dp))
+        }
+    }
+}
+
+@Composable
+private fun BrowseEntryGridCell(
+    node: LocalFileNode,
+    isChecked: Boolean,
+    onCheckToggle: () -> Unit,
+    onOpen: () -> Unit
+) {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(14.dp))
+            .background(SleekCard)
+            .border(
+                width = if (isChecked) 2.dp else 1.dp,
+                color = if (isChecked) SleekPrimary else SleekOutline.copy(alpha = 0.3f),
+                shape = RoundedCornerShape(14.dp)
+            )
+            .clickable { if (node.isDirectory) onOpen() else onCheckToggle() }
+            .padding(10.dp),
+        horizontalAlignment = Alignment.CenterHorizontally
+    ) {
+        Box(modifier = Modifier.fillMaxWidth().aspectRatio(1f), contentAlignment = Alignment.Center) {
+            Icon(
+                if (node.isDirectory) willyshare.spark.ui.PulseIcons.FolderClosed else willyshare.spark.ui.PulseIcons.forFileName(node.name),
+                contentDescription = null,
+                tint = SleekOnSurfaceVariant,
+                modifier = Modifier.size(34.dp)
+            )
+            Box(
+                modifier = Modifier
+                    .align(Alignment.TopEnd)
+                    .size(22.dp)
+                    .clip(CircleShape)
+                    .background(if (isChecked) SleekPrimary else Color.Transparent)
+                    .border(1.5.dp, if (isChecked) SleekPrimary else SleekOutline.copy(alpha = 0.5f), CircleShape)
+                    .clickable { onCheckToggle() },
+                contentAlignment = Alignment.Center
+            ) {
+                if (isChecked) Icon(Icons.Default.Check, contentDescription = "Selected", tint = Color.White, modifier = Modifier.size(12.dp))
+            }
+        }
+        Spacer(modifier = Modifier.height(6.dp))
+        Text(
+            node.name, fontSize = 11.sp, fontWeight = FontWeight.SemiBold, color = SleekOnSurface,
+            maxLines = 2, overflow = TextOverflow.Ellipsis, textAlign = TextAlign.Center
+        )
+        if (!node.isDirectory) {
+            Text(formatBytes(node.sizeBytes), fontSize = 9.sp, color = SleekOnSurfaceVariant)
         }
     }
 }
