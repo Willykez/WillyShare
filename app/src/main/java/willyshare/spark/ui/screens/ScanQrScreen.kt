@@ -14,6 +14,7 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -22,9 +23,11 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
-import androidx.compose.material3.Scaffold
+import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Text
+import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -45,9 +48,9 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.core.content.ContextCompat
 import willyshare.spark.ui.PulseViewModel
-import willyshare.spark.ui.InPageHeader
 import willyshare.spark.ui.theme.SleekBg
 import willyshare.spark.ui.theme.SleekOnSurfaceVariant
+import willyshare.spark.ui.theme.SleekOutline
 import willyshare.spark.ui.theme.SleekPrimary
 import com.google.accompanist.permissions.ExperimentalPermissionsApi
 import com.google.accompanist.permissions.isGranted
@@ -58,12 +61,21 @@ import com.google.zxing.NotFoundException
 import com.google.zxing.PlanarYUVLuminanceSource
 import com.google.zxing.common.HybridBinarizer
 
-@OptIn(ExperimentalPermissionsApi::class)
+/**
+ * Camera QR scanner as a modal bottom sheet instead of a full nav screen - slides up over
+ * whatever screen asked for it (Receive) and drops back down on dismiss/success, matching the
+ * "quick action" feel a scanner should have rather than a full page transition for something
+ * this transient. skipPartiallyExpanded so it opens straight to (near) full height - a half-
+ * height camera viewport isn't usable for actually framing a QR code.
+ */
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalPermissionsApi::class)
 @Composable
-fun ScanQrScreen(
+fun QrScannerBottomSheet(
     viewModel: PulseViewModel,
-    onNavigate: (String) -> Unit
+    onDismiss: () -> Unit,
+    onScanned: () -> Unit
 ) {
+    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     val cameraPermission = rememberPermissionState(Manifest.permission.CAMERA)
     var scanResultMessage by remember { mutableStateOf<String?>(null) }
     var isProcessing by remember { mutableStateOf(false) }
@@ -72,13 +84,16 @@ fun ScanQrScreen(
         if (!cameraPermission.status.isGranted) cameraPermission.launchPermissionRequest()
     }
 
-    Scaffold(
-        containerColor = androidx.compose.ui.graphics.Color.Transparent
-    ) { innerPadding ->
+    ModalBottomSheet(
+        onDismissRequest = onDismiss,
+        sheetState = sheetState,
+        containerColor = SleekBg,
+        dragHandle = { QrSheetDragHandle() }
+    ) {
         Box(
             modifier = Modifier
-                .fillMaxSize()
-                .padding(innerPadding)
+                .fillMaxWidth()
+                .fillMaxHeight(0.92f)
         ) {
             if (cameraPermission.status.isGranted) {
                 CameraPreviewWithScanner(
@@ -92,7 +107,7 @@ fun ScanQrScreen(
                                 // let the sender know our address instead of jumping into a
                                 // picker, then sit on Receive and wait for the push to land.
                                 viewModel.announcePresenceToSender()
-                                onNavigate("receive")
+                                onScanned()
                             } else {
                                 scanResultMessage = "That QR isn't a valid Pulse pairing code."
                                 isProcessing = false
@@ -108,11 +123,17 @@ fun ScanQrScreen(
                         .border(3.dp, SleekPrimary, RoundedCornerShape(24.dp))
                 )
 
-                InPageHeader(
-                    title = "Scan sender's QR",
-                    showBack = true,
-                    onBack = { onNavigate("receive") },
-                    modifier = Modifier.align(Alignment.TopCenter).background(Color.Black.copy(alpha = 0.35f)),
+                Text(
+                    text = "Scan sender's QR",
+                    color = Color.White,
+                    fontSize = 16.sp,
+                    fontWeight = FontWeight.Bold,
+                    modifier = Modifier
+                        .align(Alignment.TopCenter)
+                        .fillMaxWidth()
+                        .background(Color.Black.copy(alpha = 0.35f))
+                        .padding(vertical = 14.dp),
+                    textAlign = TextAlign.Center
                 )
 
                 Column(
@@ -131,12 +152,6 @@ fun ScanQrScreen(
                     )
                 }
             } else {
-                InPageHeader(
-                    title = "Scan sender's QR",
-                    showBack = true,
-                    onBack = { onNavigate("receive") },
-                    modifier = Modifier.align(Alignment.TopCenter),
-                )
                 Column(
                     modifier = Modifier
                         .fillMaxSize()
@@ -165,6 +180,18 @@ fun ScanQrScreen(
                 }
             }
         }
+    }
+}
+
+@Composable
+private fun QrSheetDragHandle() {
+    Box(modifier = Modifier.fillMaxWidth().padding(top = 10.dp, bottom = 4.dp), contentAlignment = Alignment.Center) {
+        Box(
+            modifier = Modifier
+                .size(width = 36.dp, height = 4.dp)
+                .clip(RoundedCornerShape(999.dp))
+                .background(SleekOutline.copy(alpha = 0.5f))
+        )
     }
 }
 

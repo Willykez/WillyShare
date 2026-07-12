@@ -31,6 +31,9 @@ import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.foundation.layout.Row
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -82,6 +85,7 @@ fun ReceiveScreen(viewModel: PulseViewModel, onNavigate: (String) -> Unit) {
     val connected = linkState != willyshare.spark.ui.LinkState.IDLE
     val progress by viewModel.receiveProgress.collectAsState()
     val deviceName by viewModel.thisDeviceName.collectAsState()
+    var showScannerSheet by remember { mutableStateOf(false) }
 
     LaunchedEffect(Unit) {
         if (!permissionsState.allPermissionsGranted) permissionsState.launchMultiplePermissionRequest()
@@ -233,7 +237,7 @@ fun ReceiveScreen(viewModel: PulseViewModel, onNavigate: (String) -> Unit) {
                         icon = Icons.Default.QrCodeScanner,
                         onClick = {
                             viewModel.beginScanningForSender()
-                            onNavigate("scan_qr")
+                            showScannerSheet = true
                         },
                         modifier = Modifier
                             .align(Alignment.BottomCenter)
@@ -242,5 +246,13 @@ fun ReceiveScreen(viewModel: PulseViewModel, onNavigate: (String) -> Unit) {
                 }
             }
         }
+    }
+
+    if (showScannerSheet) {
+        QrScannerBottomSheet(
+            viewModel = viewModel,
+            onDismiss = { showScannerSheet = false },
+            onScanned = { showScannerSheet = false }
+        )
     }
 }

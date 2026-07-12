@@ -38,7 +38,6 @@ import willyshare.spark.ui.screens.HistoryScreen
 import willyshare.spark.ui.screens.MyQrScreen
 import willyshare.spark.ui.screens.OnboardingScreen
 import willyshare.spark.ui.screens.ReceiveScreen
-import willyshare.spark.ui.screens.ScanQrScreen
 import willyshare.spark.ui.screens.SelectFilesScreen
 import willyshare.spark.ui.screens.SendScreen
 import willyshare.spark.ui.screens.SettingsScreen
@@ -180,7 +179,6 @@ class MainActivity : ComponentActivity() {
             "send" -> SendScreen(viewModel = viewModel, onNavigate = ::navigate)
             "receive" -> ReceiveScreen(viewModel = viewModel, onNavigate = ::navigate)
             "my_qr" -> MyQrScreen(viewModel = viewModel, onNavigate = ::navigate)
-            "scan_qr" -> ScanQrScreen(viewModel = viewModel, onNavigate = ::navigate)
             "select" -> SelectFilesScreen(viewModel = viewModel, onNavigate = ::navigate, onGoBack = ::goBack)
             "browse" -> willyshare.spark.ui.screens.BrowseFilesScreen(viewModel = viewModel, onNavigate = ::navigate)
             "transfer" -> TransferringScreen(viewModel = viewModel, onNavigate = ::navigate)
